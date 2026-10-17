@@ -12,6 +12,7 @@
 #pragma once
 
 #include <memory>  // for unique_ptr
+#include <optional>  // for optional
 
 #include <gdk/gdk.h>  // for GdkEventKey
 
@@ -94,7 +95,20 @@ protected:
 
     bool hasPressure;
 
-private:
+    /**
+     * @brief The Alt state of the latest motion event. Kept so that paintTo() can apply the
+     *        magnet snapping with the same modifier state the input event carried.
+     */
+    bool altState = false;
+
+public:
+    /**
+     * @brief The anchor point of an existing element the stroke is currently snapped to, if any.
+     * Used to draw the on-screen magnet marker.
+     */
+    auto getSnapAnchor() const -> std::optional<Point>;
+
+protected:
     /**
      * @brief Pointer to the Stabilizer instance
      */

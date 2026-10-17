@@ -18,7 +18,7 @@ ArrowHandler::~ArrowHandler() = default;
 
 auto ArrowHandler::createShape(bool isAltDown, bool isShiftDown, bool isControlDown)
         -> std::pair<std::vector<Point>, Range> {
-    Point c = snappingHandler.snap(this->currPoint, this->startPoint, isAltDown);
+    Point c = snappingHandler.snapWithElements(this->currPoint, this->startPoint, isAltDown);
     const double lineLength = std::hypot(c.x - this->startPoint.x, c.y - this->startPoint.y);
     const double thickness = control->getToolHandler()->getThickness();
     const double slimness = lineLength / thickness;

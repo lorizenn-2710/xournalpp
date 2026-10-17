@@ -307,6 +307,8 @@ void ToolMenuHandler::initToolItems() {
     emplaceCustomItemTgl("ROTATION_SNAPPING", Cat::MISC, Action::ROTATION_SNAPPING, "snapping-rotation",
                          _("Rotation Snapping"));
     emplaceCustomItemTgl("GRID_SNAPPING", Cat::MISC, Action::GRID_SNAPPING, "snapping-grid", _("Grid Snapping"));
+    emplaceCustomItemTgl("SNAP_TO_ELEMENTS", Cat::MISC, Action::SNAP_TO_ELEMENTS, "snapping-elements",
+                         _("Snap to Elements"));
 
     /*
      * Menu View
@@ -407,6 +409,7 @@ void ToolMenuHandler::initToolItems() {
 
     emplaceCustomItemTgl("SETSQUARE", Cat::MISC, Action::SETSQUARE, "setsquare", _("Setsquare"));
     emplaceCustomItemTgl("COMPASS", Cat::MISC, Action::COMPASS, "compass", _("Compass"));
+    emplaceCustomItemTgl("PROTRACTOR", Cat::MISC, Action::PROTRACTOR, "protractor", _("Protractor"));
 
     emplaceCustomItemTgl("TOGGLE_TOUCH_DRAWING", Cat::MISC, Action::TOGGLE_TOUCH_DRAWING, "touch-drawing",
                          _("Toggle Touch Drawing"));
@@ -423,6 +426,11 @@ void ToolMenuHandler::initToolItems() {
                          "draw-coordinate-system", _("Draw Coordinate System"));
     emplaceCustomItemTgl("RULER", Cat::TOOLS, Action::TOOL_DRAW_LINE, "draw-line", _("Draw Line"));
     emplaceCustomItemTgl("DRAW_SPLINE", Cat::TOOLS, Action::TOOL_DRAW_SPLINE, "draw-spline", _("Draw Spline"));
+    emplaceCustomItemTgl("DRAW_TRIANGLE", Cat::TOOLS, Action::TOOL_DRAW_TRIANGLE, "draw-triangle",
+                         _("Draw Triangle"));
+    emplaceCustomItemTgl("DRAW_BOX", Cat::TOOLS, Action::TOOL_DRAW_BOX, "draw-box", _("Draw Box"));
+    emplaceCustomItemTgl("DRAW_PYRAMID", Cat::TOOLS, Action::TOOL_DRAW_PYRAMID, "draw-pyramid",
+                         _("Draw Pyramid"));
 
     emplaceCustomItemWithTarget("SELECT_REGION", Cat::SELECTION, Action::SELECT_TOOL, TOOL_SELECT_REGION,
                                 "select-lasso", _("Select Region"));

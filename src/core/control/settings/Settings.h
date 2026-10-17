@@ -43,6 +43,13 @@
 struct Palette;
 
 constexpr auto DEFAULT_GRID_SIZE = 14.17;
+
+/**
+ * @brief Default tolerance (in pt) of the magnet snapping to the elements of the page.
+ *        1 cm on the VEIKK VK640 maps to 28.34 pt, so half a centimetre is a comfortable
+ *        "the pen is close enough, connect it" radius.
+ */
+constexpr auto DEFAULT_SNAP_TO_ELEMENTS_TOLERANCE = 0.5 * 28.34;
 constexpr unsigned int MAX_SPACES_FOR_TAB = 8U;
 
 class ButtonConfig;
@@ -333,6 +340,20 @@ public:
     void setSnapGridTolerance(double tolerance);
     double getSnapGridSize() const;
     void setSnapGridSize(double gridSize);
+
+    /**
+     * @brief Whether the pen snaps to the anchor points (ends and vertices) of the
+     *        elements already on the page. This is what lets two strokes be connected
+     *        without a visible gap.
+     */
+    bool isSnapToElements() const;
+    void setSnapToElements(bool b);
+
+    /**
+     * @brief Snap tolerance (in pt) for the magnet snapping
+     */
+    double getSnapToElementsTolerance() const;
+    void setSnapToElementsTolerance(double tolerance);
 
     double getStrokeRecognizerMinSize() const;
     void setStrokeRecognizerMinSize(double value);
@@ -1061,6 +1082,16 @@ private:
 
     /// Grid size for Snapping
     double snapGridSize{};
+
+    /**
+     * Magnet snapping to the anchor points (ends and vertices) of the elements on the page
+     */
+    bool snapToElements{};
+
+    /**
+     * Snap tolerance (in pt) for the magnet snapping
+     */
+    double snapToElementsTolerance{};
 
     /**
      * Minimum size of stroke to detect shape

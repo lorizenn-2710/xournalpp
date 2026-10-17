@@ -29,6 +29,8 @@
 #include "control/layer/LayerController.h"          // for LayerControl
 #include "control/settings/Settings.h"              // for Settings
 #include "control/tools/ArrowHandler.h"             // for ArrowHandler
+#include "control/tools/BaseShapeHandler.h"         // for BaseShapeHandler
+#include "control/tools/BoxHandler.h"               // for BoxHandler
 #include "control/tools/CoordinateSystemHandler.h"  // for CoordinateSystemH...
 #include "control/tools/EditSelection.h"            // for EditSelection
 #include "control/tools/EllipseHandler.h"           // for EllipseHandler
@@ -39,12 +41,14 @@
 #include "control/tools/LaserPointerHandler.h"      // for LaserPointerHandler
 #include "control/tools/LinkHandler.h"              // for LinkHandler
 #include "control/tools/PdfElemSelection.h"         // for PdfElemSelection
+#include "control/tools/PyramidHandler.h"           // for PyramidHandler
 #include "control/tools/RectangleHandler.h"         // for RectangleHandler
 #include "control/tools/RulerHandler.h"             // for RulerHandler
 #include "control/tools/Selector.h"                 // for RectangularSelector
 #include "control/tools/SplineHandler.h"            // for SplineHandler
 #include "control/tools/StrokeHandler.h"            // for StrokeHandler
 #include "control/tools/TextEditor.h"               // for TextEditor, TextE...
+#include "control/tools/TriangleHandler.h"          // for TriangleHandler
 #include "control/tools/VerticalToolHandler.h"      // for VerticalToolHandler
 #include "gui/FloatingToolbox.h"                    // for FloatingToolbox
 #include "gui/MainWindow.h"                         // for MainWindow
@@ -81,6 +85,7 @@
 #include "util/safe_casts.h"                        // for ceil_cast, floor_cast, round_cast
 #include "util/serdesstream.h"                      // for serdes_stream
 #include "view/DebugShowRepaintBounds.h"            // for IF_DEBUG_REPAINT
+#include "view/overlays/MagnetSnapView.h"           // for MagnetSnapView
 #include "view/overlays/OverlayView.h"              // for OverlayView, Tool...
 #include "view/overlays/PdfElementSelectionView.h"  // for PdfElementSelecti...
 #include "view/overlays/SearchResultView.h"         // for SearchResultView
@@ -288,6 +293,15 @@ auto XojPageView::onButtonPressEvent(const PositionInputData& pos) -> bool {
                 break;
             case DRAWING_TYPE_COORDINATE_SYSTEM:
                 this->inputHandler = std::make_unique<CoordinateSystemHandler>(control, getPage());
+                break;
+            case DRAWING_TYPE_TRIANGLE:
+                this->inputHandler = std::make_unique<TriangleHandler>(control, getPage());
+                break;
+            case DRAWING_TYPE_BOX:
+                this->inputHandler = std::make_unique<BoxHandler>(control, getPage());
+                break;
+            case DRAWING_TYPE_PYRAMID:
+                this->inputHandler = std::make_unique<PyramidHandler>(control, getPage());
                 break;
             default:
                 this->inputHandler = std::make_unique<StrokeHandler>(control, getPage());
@@ -579,6 +593,8 @@ auto XojPageView::onMotionNotifyEvent(const PositionInputData& pos) -> bool {
         this->linkHandler->highlight(this->getPage(), round_cast<int>(x), round_cast<int>(y), this);
     }
 
+    this->updateMagnetSnapMarker();
+
     return false;
 }
 
@@ -663,6 +679,48 @@ void XojPageView::deleteView(xoj::view::OverlayView* view) {
     }
 }
 
+void XojPageView::updateMagnetSnapMarker() {
+    // Ask the active input handler for the anchor it is holding. Only the handlers that draw
+    // freehand or with a shape tool can snap to elements.
+    std::optional<Point> anchor;
+    if (this->inputHandler) {
+        if (auto* sh = dynamic_cast<StrokeHandler*>(this->inputHandler.get()); sh) {
+            anchor = sh->getSnapAnchor();
+        } else if (auto* bh = dynamic_cast<BaseShapeHandler*>(this->inputHandler.get()); bh) {
+            anchor = bh->getSnapAnchor();
+        }
+    }
+
+    if (!anchor) {
+        if (this->magnetSnapMarker) {
+            Range rg(this->magnetSnapMarker->getAnchor().x, this->magnetSnapMarker->getAnchor().y);
+            rg.addPadding(xoj::view::MagnetSnapView::RADIUS + 2.0);
+            this->magnetSnapMarker.reset();
+            this->flagDirtyRegion(rg);
+        }
+        return;
+    }
+
+    if (!this->magnetSnapMarker) {
+        this->magnetSnapMarker = std::make_unique<xoj::view::MagnetSnapView>(this, *anchor);
+        Range rg(anchor->x, anchor->y);
+        rg.addPadding(xoj::view::MagnetSnapView::RADIUS + 2.0);
+        this->flagDirtyRegion(rg);
+        return;
+    }
+
+    if (this->magnetSnapMarker->getAnchor() == *anchor) {
+        return;
+    }
+
+    // The marker moved: repaint both the old and the new position
+    Range rg(this->magnetSnapMarker->getAnchor().x, this->magnetSnapMarker->getAnchor().y);
+    rg.addPoint(anchor->x, anchor->y);
+    rg.addPadding(xoj::view::MagnetSnapView::RADIUS + 2.0);
+    this->magnetSnapMarker = std::make_unique<xoj::view::MagnetSnapView>(this, *anchor);
+    this->flagDirtyRegion(rg);
+}
+
 auto XojPageView::onButtonReleaseEvent(const PositionInputData& pos) -> bool {
     double zoom = xournal->getZoom();
     auto x = round_cast<int>(pos.x / zoom);
@@ -705,6 +763,9 @@ auto XojPageView::onButtonReleaseEvent(const PositionInputData& pos) -> bool {
         startLink();
         this->linkHandler->select(this->getPage(), x, y, pos.isControlDown(), this);
     }
+
+    // The gesture is over: the magnet marker has nothing left to show
+    this->updateMagnetSnapMarker();
 
     if (this->inEraser) {
         this->inEraser = false;
@@ -1123,6 +1184,11 @@ auto XojPageView::paintPage(cairo_t* cr, GdkRectangle* rect) -> bool {
      */
     for (const auto& v: this->overlayViews) {
         v->draw(cr);
+    }
+
+    // The magnet marker is drawn last so it stays visible above the tool preview
+    if (this->magnetSnapMarker) {
+        this->magnetSnapMarker->draw(cr);
     }
 
     return true;

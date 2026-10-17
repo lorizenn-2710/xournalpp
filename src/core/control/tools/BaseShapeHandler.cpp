@@ -1,4 +1,4 @@
-#include "BaseShapeHandler.h"
+#include "control/tools/BaseShapeHandler.h"
 
 #include <cmath>   // for pow, NAN
 #include <memory>  // for make_unique, __share...
@@ -14,13 +14,19 @@
 #include "gui/inputdevices/PositionInputData.h"    // for PositionInputData
 #include "model/Document.h"                        // for Document
 #include "model/Layer.h"                           // for Layer
+#include "model/LineStyle.h"                       // for LineStyle
 #include "model/Stroke.h"                          // for Stroke
+#include "model/StrokeStyle.h"                     // for parseStyle
 #include "model/XojPage.h"                         // for XojPage
+#include "undo/GroupUndoAction.h"                  // for GroupUndoAction
 #include "undo/InsertUndoAction.h"                 // for InsertUndoAction
 #include "undo/UndoRedoHandler.h"                  // for UndoRedoHandler
 #include "util/Assert.h"                           // for xoj_assert
 #include "util/DispatchPool.h"                     // for DispatchPool
 #include "view/overlays/ShapeToolView.h"           // for ShapeToolView
+
+/// Line style of the edges a viewer cannot see (the textbook convention for solid figures)
+static constexpr const char* HIDDEN_EDGE_LINE_STYLE = "dash";
 
 
 BaseShapeHandler::BaseShapeHandler(Control* control, const PageRef& page, bool flipShift, bool flipControl):
@@ -37,6 +43,9 @@ BaseShapeHandler::~BaseShapeHandler() = default;
 void BaseShapeHandler::updateShape(bool isAltDown, bool isShiftDown, bool isControlDown) {
     auto [shape, rg] = this->createShape(isAltDown, isShiftDown, isControlDown);
     std::swap(shape, this->shape);
+    // The hidden edges are derived from the shape just built, so the preview under the pen already
+    // shows the dashed part of a solid figure exactly where it will be committed.
+    this->hiddenParts = this->createHiddenParts(this->shape);
     Range repaintRange = rg.unite(lastSnappingRange);
     lastSnappingRange = rg;
     repaintRange.addPadding(0.5 * this->stroke->getWidth());
@@ -45,10 +54,20 @@ void BaseShapeHandler::updateShape(bool isAltDown, bool isShiftDown, bool isCont
 
 void BaseShapeHandler::cancelStroke() {
     this->shape.clear();
+    this->hiddenParts.clear();
     Range repaintRange = this->lastSnappingRange;
     repaintRange.addPadding(0.5 * this->stroke->getWidth());
     this->viewPool->dispatchAndClear(xoj::view::ShapeToolView::FINALIZATION_REQUEST, repaintRange);
     this->lastSnappingRange = Range();
+}
+
+auto BaseShapeHandler::getHiddenParts() const -> const std::vector<std::vector<Point>>& { return this->hiddenParts; }
+
+auto BaseShapeHandler::getDrawHiddenEdges() const -> bool {
+    // A dashed line only means "you cannot see this edge" when the rest of the figure is solid.
+    // If the user is drawing with a dashed pen, dashing the hidden edges too would say nothing, so
+    // the figure is then drawn with the plain pen style throughout.
+    return !this->stroke->getLineStyle().hasDashes();
 }
 
 auto BaseShapeHandler::onKeyEvent(const KeyEvent& event, bool pressed) -> bool {
@@ -92,6 +111,9 @@ void BaseShapeHandler::onSequenceCancelEvent() { this->cancelStroke(); }
 void BaseShapeHandler::onButtonReleaseEvent(const PositionInputData& pos, double zoom) {
     control->getCursor()->activateDrawDirCursor(false);  // in case released within  fixate_Dir_Mods_Dist
 
+    // The gesture is over: drop the latched anchor so the next one starts clean
+    this->snappingHandler.resetElementSnapper();
+
     if (this->shape.size() <= 1) {
         // We need at least two points to make a stroke (it can be twice the same)
         this->cancelStroke();
@@ -108,13 +130,54 @@ void BaseShapeHandler::onButtonReleaseEvent(const PositionInputData& pos, double
     repaintRange.addPadding(0.5 * this->stroke->getWidth());
     this->viewPool->dispatchAndClear(xoj::view::ShapeToolView::FINALIZATION_REQUEST, repaintRange);
 
-    undo->addUndoAction(std::make_unique<InsertUndoAction>(page, layer, stroke.get()));
+    Document* doc = control->getDocument();
+
+    // A solid figure has edges the viewer cannot see; they go in as DASHED strokes. All the strokes
+    // of the figure are grouped into one undo action, so a single Ctrl+Z removes the whole figure
+    // instead of peeling off one dashed edge at a time.
+    const std::vector<std::vector<Point>> hidden =
+            this->getDrawHiddenEdges() ? this->hiddenParts : std::vector<std::vector<Point>>{};
+
+    auto group = std::make_unique<GroupUndoAction>();
 
     auto ptr = stroke.get();
-    Document* doc = control->getDocument();
+    group->addAction(std::make_unique<InsertUndoAction>(page, layer, stroke.get()));
     doc->lock();
     layer->addElement(std::move(stroke));
     doc->unlock();
+
+    if (!hidden.empty()) {
+        const Color color = ptr->getColor();
+        const double width = ptr->getWidth();
+        // The pattern is scaled to the pen thickness, like the main stroke's style is: a plain
+        // "dash" pattern on a thick pen closes up and reads as a solid line.
+        const LineStyle style = StrokeStyle::scaleStyle(StrokeStyle::parseStyle(HIDDEN_EDGE_LINE_STYLE), width);
+
+        for (const std::vector<Point>& part: hidden) {
+            if (part.size() < 2) {
+                continue;
+            }
+            auto dashed = std::make_unique<Stroke>();
+            dashed->setColor(color);
+            dashed->setWidth(width);
+            dashed->setFill(ptr->getFill());
+            dashed->setToolType(ptr->getToolType());
+            dashed->setLineStyle(style);
+            dashed->setPointVector(part, nullptr);
+
+            auto* dashedPtr = dashed.get();
+            group->addAction(std::make_unique<InsertUndoAction>(page, layer, dashed.get()));
+            doc->lock();
+            layer->addElement(std::move(dashed));
+            doc->unlock();
+            page->fireElementChanged(dashedPtr);
+        }
+    }
+
+    // With no hidden edge this group holds a single action, which behaves exactly like the plain
+    // insert did: one code path, nothing to keep in sync.
+    undo->addUndoAction(std::move(group));
+
     page->fireElementChanged(ptr);
 
     control->getCursor()->updateCursor();
@@ -125,10 +188,20 @@ void BaseShapeHandler::onButtonPressEvent(const PositionInputData& pos, double z
     this->buttonDownPoint.x = pos.x / zoom;
     this->buttonDownPoint.y = pos.y / zoom;
 
-    this->startPoint = snappingHandler.snapToGrid(this->buttonDownPoint, pos.isAltDown());
+    // A new gesture starts: forget the anchor the previous one may have held
+    this->snappingHandler.resetElementSnapper();
+
+    // Magnet snapping on the first point as well, so a shape can be started exactly on an
+    // existing end point or corner.
+    this->startPoint = this->snappingHandler.snapWithElements(this->buttonDownPoint, this->buttonDownPoint,
+                                                              pos.isAltDown());
     this->currPoint = this->startPoint;
 
     this->stroke = createStroke(this->control);
+}
+
+auto BaseShapeHandler::getSnapAnchor() const -> std::optional<Point> {
+    return this->snappingHandler.getLatchedAnchor();
 }
 
 void BaseShapeHandler::onButtonDoublePressEvent(const PositionInputData&, double) {

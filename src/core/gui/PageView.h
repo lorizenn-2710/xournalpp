@@ -55,6 +55,7 @@ class XojPdfPage;
 namespace xoj::view {
 class OverlayView;
 class ToolView;
+class MagnetSnapView;
 }  // namespace xoj::view
 
 class XojPageView: public LegacyRedrawable, public PageListener, public xoj::view::Repaintable {
@@ -228,6 +229,12 @@ private:
 
     void deleteView(xoj::view::OverlayView* v);
 
+    /**
+     * @brief Update the marker showing the anchor point the pen is snapped to.
+     * Creates, moves or removes the marker depending on the current state of the input handler.
+     */
+    void updateMagnetSnapMarker();
+
 private:
     PageRef page;
     XournalView* xournal = nullptr;
@@ -236,6 +243,13 @@ private:
     std::unique_ptr<InputHandler> inputHandler;
 
     std::vector<std::unique_ptr<xoj::view::OverlayView>> overlayViews;
+
+    /**
+     * @brief Marker drawn on the anchor point the pen is currently snapped to (magnet snapping).
+     * Not part of overlayViews: it is managed separately so that it can be moved and removed
+     * without disturbing the tool views.
+     */
+    std::unique_ptr<xoj::view::MagnetSnapView> magnetSnapMarker;
 
     /**
      * The selected (while selection)

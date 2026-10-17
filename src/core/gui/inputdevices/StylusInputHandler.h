@@ -34,7 +34,25 @@ public:
      */
     bool changeTool(InputEvent const& event) override;
 
+    /**
+     * VK640 patch: latch the tool on a barrel-button press (Bút -> Tẩy -> Tay) instead
+     * of switching back to the toolbar tool when the button is released.
+     *
+     * @return true when the press was consumed by the sticky-tool cycle
+     */
+    auto vk640BarrelPress(InputEvent const& event) -> bool;
+
+    /**
+     * VK640 patch: consume the matching release of a latched barrel press.
+     *
+     * @return true when the release belongs to a latched barrel press
+     */
+    auto vk640BarrelRelease() -> bool;
+
 private:
+    /** VK640 patch: a barrel press latched a tool that must survive the release. */
+    bool vk640Latch = false;
+
     /**
      * How many events since hitting the screen with the stylus are still left to be ignored before actually starting
      * the action. Set according to the user's setting on every button-1-press-event. Will be evaluated and then

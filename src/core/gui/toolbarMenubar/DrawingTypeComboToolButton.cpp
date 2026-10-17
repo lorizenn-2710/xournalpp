@@ -42,6 +42,9 @@ static auto makeEntries(IconNameHelper& icons, const ActionDatabase& db)
     entries[Type::SPLINE] = Entry(_("Draw Spline"), icons.iconName("draw-spline"), db, Action::TOOL_DRAW_SPLINE);
     entries[Type::SHAPE_RECOGNIZER] =
             Entry(_("Stroke recognizer"), icons.iconName("shape-recognizer"), db, Action::TOOL_DRAW_SHAPE_RECOGNIZER);
+    entries[Type::TRIANGLE] = Entry(_("Draw Triangle"), icons.iconName("draw-triangle"), db, Action::TOOL_DRAW_TRIANGLE);
+    entries[Type::BOX] = Entry(_("Draw Box"), icons.iconName("draw-box"), db, Action::TOOL_DRAW_BOX);
+    entries[Type::PYRAMID] = Entry(_("Draw Pyramid"), icons.iconName("draw-pyramid"), db, Action::TOOL_DRAW_PYRAMID);
     return res;
 }
 
@@ -144,6 +147,12 @@ auto DrawingTypeComboToolButton::createItem(bool horizontal) -> xoj::util::Widge
     g_signal_connect((*entries)[Type::SHAPE_RECOGNIZER].gAction.get(), "notify::state",
                      xoj::util::wrap_for_g_callback_v<Data::setProminentIconCallback<Type::SHAPE_RECOGNIZER>>,
                      data.get());
+    g_signal_connect((*entries)[Type::TRIANGLE].gAction.get(), "notify::state",
+                     xoj::util::wrap_for_g_callback_v<Data::setProminentIconCallback<Type::TRIANGLE>>, data.get());
+    g_signal_connect((*entries)[Type::BOX].gAction.get(), "notify::state",
+                     xoj::util::wrap_for_g_callback_v<Data::setProminentIconCallback<Type::BOX>>, data.get());
+    g_signal_connect((*entries)[Type::PYRAMID].gAction.get(), "notify::state",
+                     xoj::util::wrap_for_g_callback_v<Data::setProminentIconCallback<Type::PYRAMID>>, data.get());
 
     // Disconnect the signal and destroy *data if the widget is destroyed
     g_object_weak_ref(
@@ -158,6 +167,9 @@ auto DrawingTypeComboToolButton::createItem(bool horizontal) -> xoj::util::Widge
                 g_signal_handlers_disconnect_by_data((*data->entries)[Type::COORDINATE_SYSTEM].gAction.get(), d);
                 g_signal_handlers_disconnect_by_data((*data->entries)[Type::SPLINE].gAction.get(), d);
                 g_signal_handlers_disconnect_by_data((*data->entries)[Type::SHAPE_RECOGNIZER].gAction.get(), d);
+                g_signal_handlers_disconnect_by_data((*data->entries)[Type::TRIANGLE].gAction.get(), d);
+                g_signal_handlers_disconnect_by_data((*data->entries)[Type::BOX].gAction.get(), d);
+                g_signal_handlers_disconnect_by_data((*data->entries)[Type::PYRAMID].gAction.get(), d);
                 delete data;
             },
             data.release());

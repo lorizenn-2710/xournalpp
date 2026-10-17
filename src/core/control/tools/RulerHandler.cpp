@@ -12,7 +12,7 @@ RulerHandler::~RulerHandler() = default;
 
 auto RulerHandler::createShape(bool isAltDown, bool isShiftDown, bool isControlDown)
         -> std::pair<std::vector<Point>, Range> {
-    Point secondPoint = snappingHandler.snap(this->currPoint, this->startPoint, isAltDown);
+    Point secondPoint = snappingHandler.snapWithElements(this->currPoint, this->startPoint, isAltDown);
     Range rg(this->startPoint.x, this->startPoint.y);
     rg.addPoint(secondPoint.x, secondPoint.y);
     return {{this->startPoint, secondPoint}, rg};

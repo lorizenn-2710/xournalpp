@@ -20,7 +20,7 @@ auto EllipseHandler::createShape(bool isAltDown, bool isShiftDown, bool isContro
     /**
      * Snap point to grid (if enabled - Alt key pressed will toggle)
      */
-    Point c = snappingHandler.snapToGrid(this->currPoint, isAltDown);
+    Point c = snappingHandler.snapWithElements(this->currPoint, this->startPoint, isAltDown);
 
     double width = c.x - this->startPoint.x;
     double height = c.y - this->startPoint.y;

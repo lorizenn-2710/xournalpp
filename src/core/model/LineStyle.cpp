@@ -36,3 +36,10 @@ auto LineStyle::getDashes() const -> const std::vector<double>& { return dashes;
 void LineStyle::setDashes(std::vector<double>&& dashes) { this->dashes = std::move(dashes); }
 
 auto LineStyle::hasDashes() const -> bool { return !dashes.empty(); }
+
+auto LineStyle::getReferenceWidth() const -> double { return this->referenceWidth; }
+
+void LineStyle::setReferenceWidth(double width) {
+    // A non-positive width would make every scale factor meaningless
+    this->referenceWidth = width > 0.0 ? width : 1.0;
+}

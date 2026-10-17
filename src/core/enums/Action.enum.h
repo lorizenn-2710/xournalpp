@@ -115,6 +115,20 @@ enum class Action : size_t {
     TOOL_DRAW_SPLINE,
     SETSQUARE,
     COMPASS,
+    PROTRACTOR,
+
+    /**
+     * Plane and solid geometry figures: triangle, box (hinh hop), pyramid (hinh chop).
+     */
+    TOOL_DRAW_TRIANGLE,
+    TOOL_DRAW_BOX,
+    TOOL_DRAW_PYRAMID,
+
+    /**
+     * Magnet snapping: pull the pen onto the end points and vertices of the elements already
+     * on the page, so that two strokes can be connected exactly.
+     */
+    SNAP_TO_ELEMENTS,
 
     TOOL_PEN_SIZE,
     TOOL_PEN_LINE_STYLE,

@@ -360,6 +360,13 @@ endif ()
 ## Source building ##
 add_subdirectory(src)
 
+## Standalone oracle tests (tests/test-*.cpp) ##
+option(xournalpp_ORACLE_TESTS "Build and register the standalone oracle tests under tests/" ON)
+if (xournalpp_ORACLE_TESTS)
+    enable_testing()
+    add_subdirectory(tests)
+endif()
+
 ## Tests ##
 option (ENABLE_GTEST "Enable gtest build for xournalpp application" OFF)
 if (ENABLE_GTEST)

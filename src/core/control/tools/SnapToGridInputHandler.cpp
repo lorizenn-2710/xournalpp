@@ -14,11 +14,13 @@ constexpr double DEFAULT_RASTER_SIZE = 14.17;  // 5mm
 constexpr double RULED_HEADER_SIZE = 80.0;
 }  // namespace
 
-SnapToGridInputHandler::SnapToGridInputHandler(const Settings* settings): settings(settings), currentPage(nullptr) {}
+SnapToGridInputHandler::SnapToGridInputHandler(const Settings* settings):
+        settings(settings), currentPage(nullptr), elementSnapper(settings) {}
 
 void SnapToGridInputHandler::setPageRef(PageRef page) {
     this->currentPage = page;
     this->offsetsCached = false;
+    this->elementSnapper.setPageRef(std::move(page));
 }
 
 void SnapToGridInputHandler::ensureOffsetsCached() const {
@@ -152,3 +154,27 @@ Point SnapToGridInputHandler::snap(Point const& pos, Point const& center, bool a
     Point rotationSnappedPoint{snapRotation(pos, center, alt)};
     return snapToGrid(rotationSnappedPoint, alt);
 }
+
+Point SnapToGridInputHandler::snapToElements(Point const& pos, bool alt, bool latch) const {
+    return this->elementSnapper.snap(pos, alt, latch);
+}
+
+Point SnapToGridInputHandler::snapWithElements(Point const& pos, Point const& center, bool alt, bool latch) const {
+    // Grid and rotation snapping first: they are cheap and unconditional, so they give the
+    // element snapping a sensible candidate to fall back on.
+    const Point gridSnapped = snap(pos, center, alt);
+    const Point elementSnapped = this->elementSnapper.snap(gridSnapped, alt, latch);
+
+    // The snapper only returns a different point when it actually grabbed an anchor
+    if (elementSnapped != gridSnapped) {
+        return elementSnapped;
+    }
+    // No anchor nearby: the grid/rotation result stands
+    return gridSnapped;
+}
+
+auto SnapToGridInputHandler::getLatchedAnchor() const -> std::optional<Point> {
+    return this->elementSnapper.getLatchedAnchor();
+}
+
+void SnapToGridInputHandler::resetElementSnapper() { this->elementSnapper.reset(); }

@@ -111,6 +111,76 @@ void XojMsgBox::askQuestionWithMarkup(GtkWindow* win, std::string_view maintext,
     popup.show(win);
 }
 
+void XojMsgBox::askQuestionWithScrollableBody(GtkWindow* win, std::string_view maintext, const std::string& body,
+                                             const std::vector<Button>& buttons,
+                                             xoj::util::move_only_function<void(int)> callback, int maxBodyHeight) {
+    if (win == nullptr) {
+        win = defaultWindow;
+    }
+
+    GtkWidget* dialog =
+            gtk_message_dialog_new_with_markup(win, GTK_DIALOG_MODAL, GTK_MESSAGE_QUESTION, GTK_BUTTONS_NONE, nullptr);
+
+    for (auto& b: buttons) {
+        gtk_dialog_add_button(GTK_DIALOG(dialog), b.label.c_str(), b.response);
+    }
+
+    gtk_message_dialog_set_markup(GTK_MESSAGE_DIALOG(dialog), maintext.data());
+
+    // The body goes into a scrolled window rather than the dialog's secondary text: that is exactly
+    // what keeps a long text from stretching the dialog past the bottom of the screen.
+    GtkWidget* scroll = gtk_scrolled_window_new(nullptr, nullptr);
+    gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(scroll), GTK_POLICY_AUTOMATIC, GTK_POLICY_AUTOMATIC);
+    gtk_scrolled_window_set_shadow_type(GTK_SCROLLED_WINDOW(scroll), GTK_SHADOW_IN);
+
+    GtkWidget* label = gtk_label_new(body.c_str());
+    gtk_label_set_selectable(GTK_LABEL(label), TRUE);  // so the text can be copied out
+    gtk_label_set_xalign(GTK_LABEL(label), 0.0);
+    gtk_label_set_yalign(GTK_LABEL(label), 0.0);
+    // No wrapping: an aligned table of shortcuts reads wrong when wrapped, and a long line then
+    // scrolls horizontally instead of widening the dialog past the screen.
+    gtk_label_set_line_wrap(GTK_LABEL(label), FALSE);
+    gtk_widget_set_hexpand(label, TRUE);
+    gtk_container_add(GTK_CONTAINER(scroll), label);
+
+    if (maxBodyHeight <= 0) {
+        // Cap the body to a fraction of the screen, so the header and the buttons always fit.
+        GdkWindow* gdkWin = win != nullptr ? gtk_widget_get_window(GTK_WIDGET(win)) : nullptr;
+        GdkDisplay* display = gdkWin != nullptr ? gdk_window_get_display(gdkWin) : gdk_display_get_default();
+        GdkMonitor* monitor = nullptr;
+        if (display != nullptr) {
+            if (gdkWin != nullptr) {
+                monitor = gdk_display_get_monitor_at_window(display, gdkWin);
+            }
+            if (monitor == nullptr && gdk_display_get_n_monitors(display) > 0) {
+                monitor = gdk_display_get_monitor(display, 0);
+            }
+        }
+        int monitorHeight = 0;
+        if (monitor != nullptr) {
+            GdkRectangle geom{};
+            gdk_monitor_get_geometry(monitor, &geom);
+            monitorHeight = geom.height;
+        }
+        if (monitorHeight <= 0) {
+            monitorHeight = 1080;  // conservative fallback
+        }
+        // A bit over half the screen: shows a good part of the text, while leaving room for the
+        // header and the button row. GTK shrinks it further when the text is short.
+        maxBodyHeight = static_cast<int>(monitorHeight * 0.55);
+    }
+    gtk_scrolled_window_set_max_content_height(GTK_SCROLLED_WINDOW(scroll), maxBodyHeight);
+    gtk_scrolled_window_set_propagate_natural_height(GTK_SCROLLED_WINDOW(scroll), TRUE);
+    gtk_scrolled_window_set_propagate_natural_width(GTK_SCROLLED_WINDOW(scroll), TRUE);
+
+    GtkWidget* area = gtk_dialog_get_content_area(GTK_DIALOG(dialog));
+    gtk_box_pack_start(GTK_BOX(area), scroll, TRUE, TRUE, 0);
+    gtk_widget_show_all(scroll);
+
+    xoj::popup::PopupWindowWrapper<XojMsgBox> popup(GTK_DIALOG(dialog), std::move(callback));
+    popup.show(win);
+}
+
 void XojMsgBox::showErrorAndQuit(std::string& msg, int exitCode) {
     GtkWidget* dialog = gtk_message_dialog_new_with_markup(defaultWindow, GTK_DIALOG_MODAL, GTK_MESSAGE_ERROR,
                                                            GTK_BUTTONS_OK, nullptr);

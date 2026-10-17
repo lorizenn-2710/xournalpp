@@ -52,11 +52,26 @@ enum DrawingType {
     DRAWING_TYPE_DOUBLE_ARROW,
     DRAWING_TYPE_COORDINATE_SYSTEM,
     DRAWING_TYPE_SHAPE_RECOGNIZER,
-    DRAWING_TYPE_SPLINE
+    DRAWING_TYPE_SPLINE,
+
+    /**
+     * Isosceles triangle (equilateral with Shift). The workhorse for teaching plane geometry.
+     */
+    DRAWING_TYPE_TRIANGLE,
+
+    /**
+     * Rectangular box (cube with Shift) drawn in oblique projection: the figure of solid geometry.
+     */
+    DRAWING_TYPE_BOX,
+
+    /**
+     * Quadrilateral pyramid: a parallelogram base with the apex above it.
+     */
+    DRAWING_TYPE_PYRAMID
 };
-static constexpr std::array<std::string_view, 10> drawingTypeNames{
-        "dontChange",           "default",          "line",  "rectangle", "ellipse", "arrow", "doubleArrow",
-        "drawCoordinateSystem", "strokeRecognizer", "spline"};
+static constexpr std::array<std::string_view, 13> drawingTypeNames{
+        "dontChange", "default",   "line",     "rectangle", "ellipse",  "arrow",      "doubleArrow",
+        "drawCoordinateSystem", "strokeRecognizer", "spline", "triangle", "box", "pyramid"};
 
 static constexpr std::string_view drawingTypeToString(DrawingType type) {
     return drawingTypeNames.at(static_cast<size_t>(type));

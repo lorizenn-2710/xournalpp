@@ -13,6 +13,7 @@
 #include <cstring>
 #include <exception>  // for exception
 #include <limits>     // for numeric_limits
+#include <map>
 #include <memory>
 #include <sstream>
 #include <unordered_set>
@@ -51,16 +52,23 @@
 #include "model/Font.h"
 #include "model/Image.h"
 #include "model/Link.h"
+#include "model/SolidGeometry.h"  // for SolidGeometry
 #include "model/SplineSegment.h"
 #include "model/Stroke.h"
 #include "model/StrokeStyle.h"
 #include "model/Text.h"
 #include "model/XojPage.h"  // IWYU pragma: keep for XojPage
 #include "plugin/Plugin.h"
+#include "undo/DeleteUndoAction.h"
+#include "undo/GroupUndoAction.h"
 #include "undo/InsertUndoAction.h"
 #include "util/GVariantTemplate.h"    // for makeGVariant
 #include "util/PathUtil.h"            // for clea...
 #include "util/PopupWindowWrapper.h"  // for PopupWindowWrapper
+#include "util/Range.h"
+#include "util/Util.h"  // for DPI_NORMALIZATION_FACTOR
+#include "view/ElementContainerView.h"  // for ElementContainerView
+#include "view/View.h"                  // for Context
 #include "util/StringUtils.h"
 #include "util/XojMsgBox.h"
 #include "util/i18n.h"              // for _
@@ -79,8 +87,10 @@ extern "C" {
 
 /*
  * Helper function used in the rest of this code to obtain elements from the document:
- * - "type" is a string ("layer", "page", "selection" or "all") specifying if we want to retrieve, respectively,
- * elements from the current layer, page, selection, or from all the document.
+ * - "type" is a string ("layer", "page", "selection", "all" or "notePages") specifying if we want to retrieve,
+ * respectively, elements from the current layer, page, selection, from all the document, or from every note page
+ * ("giấy nháp": a page with lined paper whose background is not a PDF page — the scratch pages the teacher writes
+ * on next to the PDF pages).
  * - "elType" is the kind of elements we want to extract (ELEMENT_TEXT, ELEMENT_IMAGE, ELEMENT_STROKE...)
  * It returns a tuple containing:
  * - an (optional) string to check if an error occurred
@@ -108,6 +118,35 @@ static std::tuple<std::optional<std::string>,       // Error
                 for (auto e = v.begin(); e != v.end(); ++e) {
                     if ((*e)->getType() == elType) {
                         // Non-background layers and pages start at index 1
+                        elements.push_back(std::make_tuple(*e, std::make_optional(i + 1), std::make_optional(layerID)));
+                    }
+                }
+                layerID++;
+            }
+        }
+    } else if (type == "notePages") {
+        // Every "giấy nháp" (note/scratch) page of the document, i.e. pages that are NOT backed by a PDF page and
+        // whose paper is lined/ruled. Same criterion as the VK640 plugin (pdfBackgroundPageNo == 0 and
+        // pageTypeFormat == "lined"), kept here so callers get the whole set in one go — one undo step, no need to
+        // walk pages from Lua (which would also lose the undo granularity).
+        auto sel = control->getWindow()->getXournal()->getSelection();
+        if (sel) {
+            control->clearSelection();  // otherwise texts in the selection won't be recognized
+        }
+        auto* doc = control->getDocument();
+        for (size_t i = 0; i < doc->getPageCount(); i++) {
+            PageRef p = doc->getPage(i);
+            if (as_signed(p->getPdfPageNr()) + 1 != 0) {
+                continue;  // backed by a PDF page -> not a note page
+            }
+            if (PageTypeHandler::getStringForPageTypeFormat(p->getBackgroundType().format) != "lined") {
+                continue;  // blank/plain/custom paper is not scratch paper either
+            }
+            size_t layerID = 1;  // Layer 0 is for background and is not listed here
+            for (const Layer* l: p->getLayersView()) {
+                auto v = l->getElementsView();
+                for (auto e = v.begin(); e != v.end(); ++e) {
+                    if ((*e)->getType() == elType) {
                         elements.push_back(std::make_tuple(*e, std::make_optional(i + 1), std::make_optional(layerID)));
                     }
                 }
@@ -486,7 +525,10 @@ static int applib_openDialog(lua_State* L) {
     const std::string& pluginName = plugin->getName();
     auto header = (error ? std::string("<b>Error in </b>") : "") + std::string("Xournal++ Plugin «") + pluginName + "»";
 
-    XojMsgBox::askQuestionWithMarkup(nullptr, header, msg, buttons, [cb, plugin](int response) {
+    // The body is scrolled and its height capped: a plugin can print a long text (a table of
+    // shortcuts, say) without the dialog growing past the bottom of the screen and hiding its own
+    // buttons, which would leave the user unable to close it.
+    XojMsgBox::askQuestionWithScrollableBody(nullptr, header, msg, buttons, [cb, plugin](int response) {
         if (cb != "" && response >= 1) {
             plugin->callFunction(cb, static_cast<ptrdiff_t>(response));
         }
@@ -1642,11 +1684,11 @@ static int applib_addTexts(lua_State* L) {
  *
  * Is mostly inverse to app.addTexts (except getTexts may also retrieve the width/height/page/layer of the textbox)
  *
- * @param type string "selection" or "layer" or "page" or "all"
+ * @param type string "selection" or "layer" or "page" or "all" or "notePages"
  * @return {text:string, font:{name:string, size:number}, color:integer, x:number, y:number, wrap:number|nil,
  * width:number, height:number, ref:lightuserdata, page:number|nil, layer:number|nil}[] texts
  *
- * Required argument: type ("selection" or "layer" or "page" or "all")
+ * Required argument: type ("selection" or "layer" or "page" or "all" or "notePages")
  *
  * Example: local texts = app.getTexts("all")
  *
@@ -1958,11 +2000,11 @@ static int applib_addLinks(lua_State* L) {
  *
  * Is mostly inverse to app.addLinks (except getLinks may also retrieve the width/height/page/layer of the link box)
  *
- * @param type string "selection" or "layer" or "page" or "all"
+ * @param type string "selection" or "layer" or "page" or "all" or "notePages"
  * @return {text:string, url:string, alignment:integer, font:{name:string, size:number}, color:integer, x:number,
  * y:number, width:number, height:number, ref:lightuserdata, page:number|nil, layer:number|nil}[] links
  *
- * Required argument: type ("selection" or "layer" or "page" or "all")
+ * Required argument: type ("selection" or "layer" or "page" or "all" or "notePages")
  *
  * Example: local links = app.getLinks("all")
  *
@@ -2098,11 +2140,16 @@ static int applib_getLinks(lua_State* L) {
  *
  * Is inverse to app.addStrokes
  *
- * @param type string "selection" or "layer" or "page" or "all"
+ * Type "notePages" = every "giấy nháp" page of the document: a page that has NO PDF background and whose
+ * background style is lined. It is how the plugin reaches the scratch paper a teacher wrote on, without
+ * having to walk the pages itself (and the whole batch is ONE undo step). The lined background and every
+ * other kind of element are left alone; only strokes are collected.
+ *
+ * @param type string "selection" or "layer" or "page" or "all" or "notePages"
  * @return {x:number[], y:number[], pressure:number[], tool:string, width:number, color:integer, fill:number,
  * linestyle:string, ref:lightuserdata, page:number|nil, layer:number|nil}[] strokes
  *
- * Required argument: type ("selection" or "layer" or "page" or "all")
+ * Required argument: type ("selection" or "layer" or "page" or "all" or "notePages")
  *
  * Example: local strokes = app.getStrokes("all")
  *
@@ -2256,6 +2303,390 @@ static int applib_getStrokes(lua_State* L) {
 
         lua_settable(L, -3);  // add stroke to returned table
     }
+    return 1;
+}
+
+/**
+ * Deletes the pen strokes drawn on a page, leaving everything else on it alone.
+ *
+ * WHY A PLUGIN NEEDS THIS: the built-in ways to clear handwriting both touch more than the ink.
+ * The eraser does it a dab at a time, and "Delete" only removes what is currently selected. A teacher who has
+ * filled a lined note page with working and wants the paper clean for the next class has no one-key way to do it,
+ * because there is no Lua API that deletes elements — app.getStrokes() only reads them.
+ *
+ * WHAT IT TOUCHES, and why that matters: ONLY strokes are removed. Images, text, LaTeX and LaTeX-rendered
+ * objects on the same page stay, because those are often the question being annotated and wiping them would
+ * destroy the lesson material. The page background is not touched either, so a lined page stays lined.
+ *
+ * @param type string "selection" | "layer" | "page" | "all" | "notePages", same meaning as in getStrokes().
+ *             "notePages" = every "giấy nháp" page of the document (lined paper, no PDF background), so a whole
+ *             lesson's scratch paper can be wiped in one keypress and one undo step.
+ * @return integer, the number of strokes removed
+ *
+ * The strokes go through the normal undo stack, so a single Ctrl+Z brings them all back.
+ *
+ * Example: app.deleteStrokes("page")
+ */
+static int applib_deleteStrokes(lua_State* L) {
+    Plugin* plugin = Plugin::getPluginFromLua(L);
+    Control* ctrl = plugin->getControl();
+
+    const std::string type = luaL_checkstring(L, 1);
+    // Only Stroke elements are picked up, exactly as getStrokes() does, so an image on the page is not
+    // mistaken for something to delete.
+    auto [err, elements] = getElementsFromHelper(ctrl, type, ELEMENT_STROKE);
+    if (err.has_value()) {
+        return luaL_error(L, err.value().c_str());
+    }
+    if (elements.empty()) {
+        // Report 0 rather than returning nothing: the caller is told "nothing was removed" instead of
+        // getting nil, which in Lua reads the same as "the function does not exist".
+        lua_pushinteger(L, 0);
+        return 1;
+    }
+
+    // groupUndoAction keeps it ONE undo step, however many strokes went: without it the user would have to
+    // press Ctrl+Z as many times as there were strokes to get the page back.
+    auto groupUndoAction = std::make_unique<GroupUndoAction>();
+    Document* doc = ctrl->getDocument();
+    std::size_t removed = 0;
+
+    // Group by page and layer: an element index is only meaningful within one layer of one page, and removing
+    // an element shifts the ones behind it.
+    //
+    // Resolving which layer a stroke lives in matters. getElementsFromHelper() reports the layer number
+    // (1-based, counting the non-background layers, the convention the Lua API uses) for "page" and "all",
+    // but reports nothing for "layer" and "selection", where the elements come from the layer being worked
+    // on. Assuming the selected layer for everything is not harmless: on a page with two layers the strokes
+    // living in the other layer would be looked up in the selected one, fail to be found, and quietly survive.
+    auto* sel = ctrl->getWindow()->getXournal()->getSelection();
+    std::map<PageRef, std::map<Layer*, std::vector<const Element*>>> byPage;
+    for (const auto& [element, pageNb, layerNb]: elements) {
+        PageRef p;
+        if (pageNb.has_value()) {
+            p = doc->getPage(pageNb.value() - 1);
+        } else if (type == "selection" && sel) {
+            // A selection can be dragged away from the page it was taken from; it still belongs to that page.
+            p = sel->getSourcePage();
+        } else {
+            p = ctrl->getCurrentPage();
+        }
+        if (!p) {
+            continue;
+        }
+        Layer* l = nullptr;
+        if (layerNb.has_value()) {
+            const auto& layers = p->getLayersView();
+            if (layerNb.value() <= layers.size()) {
+                // getLayersView() hands out const pointers, but deleting an element needs the mutable layer.
+                l = const_cast<Layer*>(layers[layerNb.value() - 1]);
+            }
+        } else {
+            l = p->getSelectedLayer();
+        }
+        if (!l) {
+            continue;
+        }
+        byPage[p][l].push_back(element);
+    }
+
+    doc->lock();
+    std::map<PageRef, Range> repaintRanges;
+    for (auto& [page, perLayer]: byPage) {
+        for (auto& [layer, ptrs]: perLayer) {
+            auto deleteUndoAction = std::make_unique<DeleteUndoAction>(page, false);
+            std::size_t removedHere = 0;
+            // Walk the list BACKWARDS: removing an element shifts the ones behind it, so going from the end keeps
+            // every pointer in the list still valid when its turn comes.
+            for (auto it = ptrs.rbegin(); it != ptrs.rend(); ++it) {
+                const Element* e = *it;
+                Range box(e->getBoundingBox());
+                auto [removedElement, pos] = layer->removeElement(e);
+                if (pos == Element::InvalidIndex) {
+                    continue;
+                }
+                repaintRanges[page] = repaintRanges[page].unite(box);
+                deleteUndoAction->addElement(layer, std::move(removedElement), pos);
+                ++removedHere;
+            }
+            if (removedHere > 0) {
+                groupUndoAction->addAction(std::move(deleteUndoAction));
+                removed += removedHere;
+            }
+        }
+    }
+    doc->unlock();
+
+    // Repaint only what actually went away, not the whole page.
+    for (auto& [page, range]: repaintRanges) {
+        if (!range.empty()) {
+            page->fireRangeChanged(range);
+        }
+    }
+
+    if (removed > 0) {
+        ctrl->getUndoRedoHandler()->addUndoAction(std::move(groupUndoAction));
+    }
+
+    lua_pushinteger(L, as_signed(removed));
+    return 1;
+}
+
+/**
+ * Turns the current selection into ONE image of it: "scan the region I selected into a picture".
+ *
+ * WHY A PLUGIN NEEDS THIS: the app can move and resize a selection, but a selection is a loose bag of
+ * strokes, texts and images that keeps behaving like its parts — edit one part and the "group" is gone,
+ * and nothing about it can be handed around as a unit. Turning it into an image gives the user the same
+ * object the app already knows how to move, resize, rotate and delete as a whole, exactly like an image
+ * pasted in from a file. A teacher who drew a figure on the board and wants to reuse it, shrink it into a
+ * corner or delete it in one go has no way to do that with strokes.
+ *
+ * HOW: the selected elements are drawn into an off-screen surface at 300 dpi (the same recipe the clipboard
+ * uses to put a selection on the clipboard as PNG), the result becomes an Image element sized to the exact
+ * bounding box the selection occupied, and that element is put where the selection was.
+ *
+ * @param opts table {mode:string}
+ *        mode = "copy" (DEFAULT): the selected elements STAY on the page and the image is laid exactly on
+ *              top of them, as a floating selection the user can drag away, resize, rotate or delete —
+ *              "scan this region into a picture", with the original ink untouched and still editable.
+ *        mode = "move" (alias "cut"): the selected elements are CONSUMED — the image replaces them, so the
+ *              ink stops being editable and becomes a picture.
+ * @return integer, 1 when an image was created, 0 when there was nothing selected
+ *
+ * The whole operation is ONE undo step: Ctrl+Z puts the elements back and takes the image away.
+ * Example: app.selectionAsImage()               -- default `copy`: the ink stays, the image is added
+ *          app.selectionAsImage({mode = "move"}) -- `move`: consumes the ink (image replaces it)
+ */
+static int applib_selectionAsImage(lua_State* L) {
+    Plugin* plugin = Plugin::getPluginFromLua(L);
+    Control* ctrl = plugin->getControl();
+    XournalView* xournal = ctrl->getWindow()->getXournal();
+
+    // COPY IS THE DEFAULT, on the user's explicit correction: the shortcut is for reusing a piece of the
+    // board ("...không phải là cắt lấy đi mà là copy") — taking the ink away as a side effect of making a
+    // picture of it is never what was asked for. "move"/"cut" stay available for callers that really mean
+    // to replace the ink with the picture. An unusable mode is REFUSED loudly instead of silently moving.
+    std::string mode = "copy";
+    if (lua_istable(L, 1)) {
+        lua_getfield(L, 1, "mode");
+        mode = luaL_optstring(L, -1, "copy");
+        lua_pop(L, 1);
+    }
+    if (mode != "copy" && mode != "move" && mode != "cut") {
+        return luaL_error(L, "selectionAsImage: mode must be \"copy\" (default) or \"move\"/\"cut\", got \"%s\"",
+                          mode.c_str());
+    }
+
+    EditSelection* sel = xournal->getSelection();
+    if (sel == nullptr) {
+        lua_pushinteger(L, 0);  // nothing selected: not an error, the caller reports it
+        return 1;
+    }
+
+    PageRef page = sel->getSourcePage();
+    Layer* layer = sel->getSourceLayer();
+    XojPageView* view = sel->getView();
+    if (!page || !layer || !view) {
+        lua_pushinteger(L, 0);
+        return 1;
+    }
+
+    // The bounding box is computed from the elements themselves rather than from the selection's stored
+    // origin: a selection that has been dragged around no longer sits at its original position, and the
+    // picture must cover the ink as it is now.
+    Range box;
+    for (const Element* e: sel->getElementsView()) {
+        box = box.unite(Range(e->getBoundingBox()));
+    }
+    if (box.empty() || box.getWidth() <= 0 || box.getHeight() <= 0) {
+        lua_pushinteger(L, 0);
+        return 1;
+    }
+
+    // Render at 300 dpi, the same resolution the clipboard uses, so the picture stays sharp when zoomed in.
+    const double dpiFactor = 300.0 / Util::DPI_NORMALIZATION_FACTOR;
+    const int pixelWidth = std::max(1, static_cast<int>(std::ceil(box.getWidth() * dpiFactor)));
+    const int pixelHeight = std::max(1, static_cast<int>(std::ceil(box.getHeight() * dpiFactor)));
+
+    cairo_surface_t* surface = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, pixelWidth, pixelHeight);
+    if (cairo_surface_status(surface) != CAIRO_STATUS_SUCCESS) {
+        cairo_surface_destroy(surface);
+        return luaL_error(L, "Could not allocate a %dx%d surface", pixelWidth, pixelHeight);
+    }
+    cairo_t* cr = cairo_create(surface);
+    cairo_scale(cr, dpiFactor, dpiFactor);
+    cairo_translate(cr, -box.minX, -box.minY);
+    {
+        xoj::view::ElementContainerView view_(sel);
+        view_.draw(xoj::view::Context::createDefault(cr));
+    }
+    cairo_destroy(cr);
+
+    GdkPixbuf* pixbuf = gdk_pixbuf_get_from_surface(surface, 0, 0, pixelWidth, pixelHeight);
+    cairo_surface_destroy(surface);
+    if (pixbuf == nullptr) {
+        return luaL_error(L, "Could not read the rendered selection back as an image");
+    }
+
+    // The Image element holds encoded file data, not a surface, so the pixels go through PNG in memory.
+    gchar* pngData = nullptr;
+    gsize pngLen = 0;
+    GError* error = nullptr;
+    const bool encoded = gdk_pixbuf_save_to_buffer(pixbuf, &pngData, &pngLen, "png", &error, nullptr);
+    g_object_unref(pixbuf);
+    if (!encoded) {
+        std::string message = error != nullptr ? error->message : "unknown error";
+        g_clear_error(&error);
+        return luaL_error(L, "Could not encode the selection as PNG: %s", message.c_str());
+    }
+
+    auto image = std::make_unique<Image>();
+    {
+        std::string data(pngData, pngLen);
+        g_free(pngData);
+        image->setImage(std::move(data));
+    }
+    if (auto err = image->renderBuffer(); err.has_value()) {
+        return luaL_error(L, err.value().c_str());
+    }
+
+    // Sized and placed exactly over the region it was taken from (scale is the identity unless the region
+    // ran off the page and automaticScaling had to shrink it).
+    ImageHandler::automaticScaling(*image, {box.minX, box.minY, box.getWidth(), box.getHeight()}, page);
+
+    Image* imagePtr = image.get();
+    auto groupUndoAction = std::make_unique<GroupUndoAction>();
+    groupUndoAction->addAction(std::make_unique<InsertUndoAction>(page, layer, imagePtr));
+    if (mode != "copy") {
+        // fillUndoItem() takes the selected elements (which the selection detached from the layer) into the
+        // undo action, so the "move" is undoable together with the insert as one step.
+        auto deleteUndoAction = std::make_unique<DeleteUndoAction>(page, false);
+        sel->fillUndoItem(deleteUndoAction.get());
+        groupUndoAction->addAction(std::move(deleteUndoAction));
+    }
+    ctrl->getUndoRedoHandler()->addUndoAction(std::move(groupUndoAction));
+
+    // Hand the image over as a floating selection: the user can move/resize/rotate it straight away, and it
+    // lands in the layer when they click away — the same path a pasted image takes.
+    auto newSelection = SelectionFactory::createFromFloatingElement(ctrl, page, layer, view, std::move(image));
+    xournal->setSelection(newSelection.release());
+    xournal->repaintSelection(true);
+
+    lua_pushinteger(L, 1);
+    return 1;
+}
+
+/**
+ * Writes the textbook names of the corners of the selected figure on the page: A, B, C, D on the front
+ * face of a box and A', B', C', D' behind it, or A, B, C, D on the base of a pyramid and S at its apex.
+ *
+ * WHY A PLUGIN NEEDS THIS: the letters are what makes a figure readable when teaching ("so sánh AB với
+ * A'B'"), and placing four or eight text boxes by hand — each dragged, each resized, each kept clear of the
+ * line it belongs to — takes minutes per figure and comes out crooked. The shape tools already know exactly
+ * where the corners are, so the letters can simply be put there.
+ *
+ * HOW: the corners are taken from the SELECTED strokes and recognised by their number and order (see
+ * SolidGeometry::vertexLabels, which holds the whole classification and is tested on its own). Nothing is
+ * written when the selection is not a figure this knows — an unlabelled figure is better than a wrongly
+ * labelled one.
+ *
+ * @param opts table {fontSize:number, offsetX:number, offsetY:number, color:integer}, all optional.
+ *        The letter is placed at (corner.x + offsetX, corner.y - offsetY), i.e. up and to the right of the
+ *        corner by default, so it does not sit on the lines.
+ * @return integer, how many letters were written (0 = nothing recognised)
+ *
+ * All the letters go in as ONE undo step. The selection is left alone, so the figure stays selected.
+ * Example: app.labelSelectionVertices({fontSize = 16})
+ */
+static int applib_labelSelectionVertices(lua_State* L) {
+    Plugin* plugin = Plugin::getPluginFromLua(L);
+    Control* ctrl = plugin->getControl();
+    XournalView* xournal = ctrl->getWindow()->getXournal();
+
+    double fontSize = 16.0;
+    double offsetX = 5.0;
+    double offsetY = 20.0;
+    uint32_t color = 0xff000000U;
+    if (lua_istable(L, 1)) {
+        lua_getfield(L, 1, "fontSize");
+        fontSize = luaL_optnumber(L, -1, fontSize);
+        lua_pop(L, 1);
+        lua_getfield(L, 1, "offsetX");
+        offsetX = luaL_optnumber(L, -1, offsetX);
+        lua_pop(L, 1);
+        lua_getfield(L, 1, "offsetY");
+        offsetY = luaL_optnumber(L, -1, offsetY);
+        lua_pop(L, 1);
+        lua_getfield(L, 1, "color");
+        if (lua_isinteger(L, -1)) {
+            color = static_cast<uint32_t>(as_unsigned(lua_tointeger(L, -1))) | 0xff000000U;
+        }
+        lua_pop(L, 1);
+    }
+
+    EditSelection* sel = xournal->getSelection();
+    if (sel == nullptr) {
+        lua_pushinteger(L, 0);
+        return 1;
+    }
+    PageRef page = sel->getSourcePage();
+    Layer* layer = sel->getSourceLayer();
+    if (!page || !layer) {
+        lua_pushinteger(L, 0);
+        return 1;
+    }
+
+    std::vector<std::vector<Point>> strokes;
+    for (const Element* e: sel->getElementsView()) {
+        if (e->getType() != ELEMENT_STROKE) {
+            continue;  // an image or a text in the selection says nothing about the corners
+        }
+        const auto* stroke = dynamic_cast<const Stroke*>(e);
+        if (stroke != nullptr && stroke->getPointCount() > 1) {
+            strokes.push_back(stroke->getPointVector());
+        }
+    }
+    if (strokes.empty()) {
+        lua_pushinteger(L, 0);
+        return 1;
+    }
+
+    const std::vector<SolidGeometry::VertexLabel> labels = SolidGeometry::vertexLabels(strokes);
+    if (labels.empty()) {
+        lua_pushinteger(L, 0);  // not a figure this knows: write nothing rather than something wrong
+        return 1;
+    }
+
+    XojFont font = ctrl->getSettings()->getFont();
+    font.setSize(fontSize);
+
+    auto groupUndoAction = std::make_unique<GroupUndoAction>();
+    Range repaint;
+    {
+        std::lock_guard lock(*ctrl->getDocument());
+        for (const SolidGeometry::VertexLabel& label: labels) {
+            auto text = std::make_unique<Text>();
+            text->setText(label.name);
+            text->setFont(font);
+            text->setColor(Color(color));
+            text->move(label.position.x + offsetX, label.position.y - offsetY);
+
+            const Element* created = text.get();
+            groupUndoAction->addAction(std::make_unique<InsertUndoAction>(page, layer, created));
+            // Repaint the box the letter occupies (the letter's own layout is only computed when it is
+            // drawn, so the position and the font size are used directly).
+            repaint = repaint.unite(Range(label.position.x + offsetX - 2.0, label.position.y - offsetY - 2.0,
+                                          label.position.x + offsetX + fontSize, label.position.y - offsetY + fontSize));
+            layer->addElement(std::move(text));
+        }
+    }
+    ctrl->getUndoRedoHandler()->addUndoAction(std::move(groupUndoAction));
+    if (!repaint.empty()) {
+        page->fireRangeChanged(repaint);
+    }
+
+    lua_pushinteger(L, as_signed(labels.size()));
     return 1;
 }
 
@@ -3681,11 +4112,11 @@ static int applib_addImages(lua_State* L) {
  *
  * Is inverse to app.addImages
  *
- * @param type string "selection" or "layer" or "page" or "all"
+ * @param type string "selection" or "layer" or "page" or "all" or "notePages"
  * @return {x:number, y:number, width:number, height:number, data:string, format:string, imageWidth:number,
  * imageHeight:number, ref:lightuserdata, page:number|nil, layer:number|nil}[] images
  *
- * Required argument: type ("selection" or "layer" or "page" or "all")
+ * Required argument: type ("selection" or "layer" or "page" or "all" or "notePages")
  *
  * Example: local images = app.getImages("selection")
  *
@@ -4265,6 +4696,9 @@ static const luaL_Reg applib[] = {
         {"fileDialogOpen", applib_fileDialogOpen},
         {"refreshPage", applib_refreshPage},
         {"getStrokes", applib_getStrokes},
+        {"deleteStrokes", applib_deleteStrokes},
+        {"selectionAsImage", applib_selectionAsImage},
+        {"labelSelectionVertices", applib_labelSelectionVertices},
         {"getImages", applib_getImages},
         {"getTexts", applib_getTexts},
         {"getLinks", applib_getLinks},

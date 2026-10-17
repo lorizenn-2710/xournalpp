@@ -66,11 +66,28 @@ auto StrokeHandler::onMotionNotifyEvent(const PositionInputData& pos, double zoo
         return true;
     }
 
+    this->altState = pos.isAltDown();
+
     stabilizer->processEvent(pos);
     return true;
 }
 
+auto StrokeHandler::getSnapAnchor() const -> std::optional<Point> {
+    return this->snappingHandler.getLatchedAnchor();
+}
+
 void StrokeHandler::paintTo(Point point) {
+    // Magnet snapping: while drawing freehand, a stroke that comes close to the end point or a
+    // vertex of an existing element is pulled onto it, so two strokes meet exactly instead of
+    // leaving a gap. The snapping is applied on a copy used for the position only: the pressure
+    // (z) of the incoming point is kept.
+    {
+        const Point snapped =
+                this->snappingHandler.snapToElements(Point(point.x, point.y), this->altState);
+        point.x = snapped.x;
+        point.y = snapped.y;
+    }
+
     if (this->hasPressure && point.z > 0.0) {
         point.z *= this->stroke->getWidth();
     }
@@ -260,6 +277,10 @@ void StrokeHandler::onButtonPressEvent(const PositionInputData& pos, double zoom
 
     this->buttonDownPoint.x = pos.x / zoom;
     this->buttonDownPoint.y = pos.y / zoom;
+
+    this->altState = pos.isAltDown();
+    // A new stroke starts: the anchor held by the previous one must not leak into this one
+    this->snappingHandler.resetElementSnapper();
 
     stroke = createStroke(this->control);
 

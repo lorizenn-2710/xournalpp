@@ -376,6 +376,11 @@ protected:
     void setRotationSnapping(bool enable);
     void setGridSnapping(bool enable);
 
+    /**
+     * @brief Enable or disable the magnet snapping to the elements of the page
+     */
+    void setSnapToElements(bool enable);
+
     void showFontDialog();
     void showColorChooserDialog();
 
@@ -412,6 +417,7 @@ private:
      * @return true if a compass was created
      */
     bool toggleCompass();
+    bool toggleProtractor();
     /**
      * @brief Creates a setsquare if it's not on the current page yet. Deletes it if it already exists.
      * @return true if a setsquare was created

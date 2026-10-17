@@ -53,6 +53,9 @@ public:
         COORDINATE_SYSTEM,
         SPLINE,
         SHAPE_RECOGNIZER,
+        TRIANGLE,
+        BOX,
+        PYRAMID,
         ENUMERATOR_COUNT
     };
 

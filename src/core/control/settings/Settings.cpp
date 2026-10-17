@@ -147,6 +147,11 @@ void Settings::loadDefault() {
     this->snapGridTolerance = 0.50;
     this->snapGridSize = DEFAULT_GRID_SIZE;
 
+    // Magnet snapping: on by default, because connecting two strokes is a much more common
+    // need on a drawing tablet than being able to start a stroke 10 pt away from an end point.
+    this->snapToElements = true;
+    this->snapToElementsTolerance = DEFAULT_SNAP_TO_ELEMENTS_TOLERANCE;
+
     this->strokeRecognizerMinSize = 40;
 
     this->touchDrawing = false;
@@ -612,6 +617,10 @@ void Settings::parseItem(xmlDocPtr doc, xmlNodePtr cur) {
         this->snapGridSize = tempg_ascii_strtod(reinterpret_cast<const char*>(value), nullptr);
     } else if (xmlStrcmp(name, reinterpret_cast<const xmlChar*>("snapGridTolerance")) == 0) {
         this->snapGridTolerance = tempg_ascii_strtod(reinterpret_cast<const char*>(value), nullptr);
+    } else if (xmlStrcmp(name, reinterpret_cast<const xmlChar*>("snapToElements")) == 0) {
+        this->snapToElements = xmlStrcmp(value, reinterpret_cast<const xmlChar*>("true")) == 0;
+    } else if (xmlStrcmp(name, reinterpret_cast<const xmlChar*>("snapToElementsTolerance")) == 0) {
+        this->snapToElementsTolerance = tempg_ascii_strtod(reinterpret_cast<const char*>(value), nullptr);
     } else if (xmlStrcmp(name, reinterpret_cast<const xmlChar*>("strokeRecognizerMinSize")) == 0) {
         this->strokeRecognizerMinSize = tempg_ascii_strtod(reinterpret_cast<const char*>(value), nullptr);
     } else if (xmlStrcmp(name, reinterpret_cast<const xmlChar*>("touchDrawing")) == 0) {
@@ -1131,6 +1140,8 @@ void Settings::save() {
     SAVE_BOOL_PROP(snapGrid);
     SAVE_DOUBLE_PROP(snapGridTolerance);
     SAVE_DOUBLE_PROP(snapGridSize);
+    SAVE_BOOL_PROP(snapToElements);
+    SAVE_DOUBLE_PROP(snapToElementsTolerance);
 
     SAVE_DOUBLE_PROP(strokeRecognizerMinSize);
 
@@ -1635,6 +1646,26 @@ void Settings::setSnapGridSize(double gridSize) {
         return;
     }
     this->snapGridSize = gridSize;
+    save();
+}
+
+auto Settings::isSnapToElements() const -> bool { return this->snapToElements; }
+
+void Settings::setSnapToElements(bool b) {
+    if (this->snapToElements == b) {
+        return;
+    }
+    this->snapToElements = b;
+    save();
+}
+
+auto Settings::getSnapToElementsTolerance() const -> double { return this->snapToElementsTolerance; }
+
+void Settings::setSnapToElementsTolerance(double tolerance) {
+    if (this->snapToElementsTolerance == tolerance) {
+        return;
+    }
+    this->snapToElementsTolerance = tolerance;
     save();
 }
 

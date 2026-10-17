@@ -65,6 +65,27 @@ public:
                                       xoj::util::move_only_function<void(int)> callback);
 
     /**
+     * @brief Same as askQuestionWithMarkup(), but the body text is put in a scrollable area whose
+     * height is capped, so a long body can never push the dialog's buttons off the bottom of the
+     * screen.
+     *
+     * WHY THIS EXISTS: a message dialog grows to fit its text. A plugin that prints a long help
+     * text therefore gets a dialog taller than the screen, with its buttons below the visible area,
+     * and the user cannot close it at all — not even with the mouse. Capping the body height and
+     * scrolling it keeps every button reachable whatever the length of the text.
+     *
+     * For a short body the scrolled area collapses to the text's own height, so the dialog looks
+     * exactly as it did before.
+     *
+     * @param maxBodyHeight cap on the body area, in pixels. <= 0 means "derive from the monitor
+     *        the dialog will appear on" (a fraction of its height), which is the usual choice.
+     */
+    static void askQuestionWithScrollableBody(GtkWindow* win, std::string_view maintext, const std::string& body,
+                                             const std::vector<Button>& buttons,
+                                             xoj::util::move_only_function<void(int)> callback,
+                                             int maxBodyHeight = 0);
+
+    /**
      * @brief Shows a message with title markupTitle and message content msg.
      * The title is formatted according to any Pango markups it contains.
      */

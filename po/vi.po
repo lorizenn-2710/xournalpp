@@ -894,16 +894,16 @@ msgstr ""
 
 #: ../src/core/gui/dialog/ButtonConfigGui.cpp:32
 msgid "Very thin"
-msgstr ""
+msgstr "Rất mảnh"
 
 #: ../src/core/gui/dialog/ButtonConfigGui.cpp:34
 msgid "Thin"
-msgstr ""
+msgstr "Mảnh"
 
 #: ../src/core/gui/dialog/ButtonConfigGui.cpp:36
 #: ../src/core/gui/toolbarMenubar/ToolMenuHandler.cpp:509
 msgid "Medium"
-msgstr "Trung bình"
+msgstr "Trung bình"
 
 #: ../src/core/gui/dialog/ButtonConfigGui.cpp:38
 #: ../src/core/gui/toolbarMenubar/ToolMenuHandler.cpp:510
@@ -912,7 +912,7 @@ msgstr "Dày"
 
 #: ../src/core/gui/dialog/ButtonConfigGui.cpp:40
 msgid "Very thick"
-msgstr ""
+msgstr "Rất dày"
 
 #: ../src/core/gui/dialog/ButtonConfigGui.cpp:57
 msgid "No device"
@@ -1020,7 +1020,7 @@ msgstr "Vẽ Đường thẳng"
 #: ../src/core/gui/toolbarMenubar/DrawingTypeComboToolButton.cpp:34
 #: ../src/core/gui/toolbarMenubar/ToolMenuHandler.cpp:417
 msgid "Draw Rectangle"
-msgstr "Vẽ Tam giác"
+msgstr "Vẽ hình chữ nhật"
 
 #: ../src/core/gui/dialog/ButtonConfigGui.cpp:135
 #: ../src/core/gui/toolbarMenubar/DrawingTypeComboToolButton.cpp:35
@@ -1056,6 +1056,15 @@ msgstr ""
 #: ../src/core/gui/toolbarMenubar/ToolMenuHandler.cpp:425
 msgid "Draw Spline"
 msgstr "Vẽ Đường cong nối trục"
+
+msgid "Draw Triangle"
+msgstr "Vẽ Tam giác"
+
+msgid "Draw Box"
+msgstr "Vẽ hình hộp"
+
+msgid "Draw Pyramid"
+msgstr "Vẽ hình chóp"
 
 #: ../src/core/gui/dialog/DeviceTestingArea.cpp:181
 msgid "Export Logs"
@@ -1530,6 +1539,9 @@ msgstr "Khoá Xoay"
 msgid "Grid Snapping"
 msgstr "Khoá Lưới"
 
+msgid "Snap to Elements"
+msgstr "Nối vào điểm có sẵn"
+
 #: ../src/core/gui/toolbarMenubar/ToolMenuHandler.cpp:317
 msgid "Paired pages"
 msgstr "Các trang đã ghép"
@@ -1627,22 +1639,22 @@ msgstr "Xóa trang hiện tại"
 #: ../src/core/gui/toolbarMenubar/ToolMenuHandler.cpp:377
 #: ../src/core/gui/toolbarMenubar/ToolMenuHandler.cpp:385
 msgid "standard"
-msgstr "bình thường"
+msgstr "nét liền"
 
 #: ../src/core/gui/toolbarMenubar/ToolMenuHandler.cpp:369
 #: ../src/core/gui/toolbarMenubar/ToolMenuHandler.cpp:387
 msgid "dashed"
-msgstr "gạch"
+msgstr "nét đứt"
 
 #: ../src/core/gui/toolbarMenubar/ToolMenuHandler.cpp:370
 #: ../src/core/gui/toolbarMenubar/ToolMenuHandler.cpp:389
 msgid "dash-/ dotted"
-msgstr "gạch-/ chấm"
+msgstr "đứt - chấm"
 
 #: ../src/core/gui/toolbarMenubar/ToolMenuHandler.cpp:371
 #: ../src/core/gui/toolbarMenubar/ToolMenuHandler.cpp:391
 msgid "dotted"
-msgstr "nhiều chấm"
+msgstr "nét chấm"
 
 #: ../src/core/gui/toolbarMenubar/ToolMenuHandler.cpp:378
 msgid "whiteout"
@@ -1680,6 +1692,10 @@ msgstr "Ê ke"
 #: ../src/core/gui/toolbarMenubar/ToolMenuHandler.cpp:409
 msgid "Compass"
 msgstr "Com-pa"
+
+#: ../src/core/gui/toolbarMenubar/ToolMenuHandler.cpp:412
+msgid "Protractor"
+msgstr "Thước đo góc"
 
 #: ../src/core/gui/toolbarMenubar/ToolMenuHandler.cpp:412
 msgid "Toggle Touch Drawing"

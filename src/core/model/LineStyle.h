@@ -50,6 +50,22 @@ public:
      */
     void setDashes(std::vector<double>&& dashes);
 
+    /**
+     * @brief The stroke width the dash pattern was computed for.
+     *
+     * The dash pattern is a fixed list of lengths, so a 6-3 pattern that reads well on a thin
+     * stroke closes up into a solid-looking line on a thick one. The style is therefore computed
+     * for the current pen thickness and the value it was computed for is stored here, so that
+     * changing the thickness can recompute it. A value of 1.0 means "not tied to a thickness".
+     */
+    double getReferenceWidth() const;
+    void setReferenceWidth(double width);
+
 private:
     std::vector<double> dashes;
+
+    /**
+     * @brief Pen thickness the dashes were scaled for, see getReferenceWidth()
+     */
+    double referenceWidth = 1.0;
 };

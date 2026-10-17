@@ -21,7 +21,7 @@
 constexpr static double HALF_CM = 14.17;
 constexpr static double CM = 2. * HALF_CM;
 
-enum GeometryToolType { SETSQUARE, COMPASS };
+enum GeometryToolType { SETSQUARE, COMPASS, PROTRACTOR };
 
 /**
  * @brief A class that models a geometry tool

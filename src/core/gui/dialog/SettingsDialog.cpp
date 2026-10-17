@@ -349,6 +349,7 @@ void SettingsDialog::load() {
     loadCheckbox("cbDoActionOnStrokeFiltered", settings->getDoActionOnStrokeFiltered());
     loadCheckbox("cbTrySelectOnStrokeFiltered", settings->getTrySelectOnStrokeFiltered());
     loadCheckbox("cbSnapRecognizedShapesEnabled", settings->getSnapRecognizedShapesEnabled());
+    loadCheckbox("cbSnapToElements", settings->isSnapToElements());
     loadCheckbox("cbRestoreLineWidthEnabled", settings->getRestoreLineWidthEnabled());
     loadCheckbox("cbStockIcons", settings->areStockIconsUsed());
     loadCheckbox("cbShowPageShadow", settings->isShowPageShadow());
@@ -436,6 +437,9 @@ void SettingsDialog::load() {
 
     GtkWidget* spSnapGridSize = builder.get("spSnapGridSize");
     gtk_spin_button_set_value(GTK_SPIN_BUTTON(spSnapGridSize), settings->getSnapGridSize() / DEFAULT_GRID_SIZE);
+
+    GtkWidget* spSnapToElementsTolerance = builder.get("spSnapToElementsTolerance");
+    gtk_spin_button_set_value(GTK_SPIN_BUTTON(spSnapToElementsTolerance), settings->getSnapToElementsTolerance());
 
     GtkWidget* spStrokeRecognizerMinSize = builder.get("spStrokeRecognizerMinSize");
     gtk_spin_button_set_value(GTK_SPIN_BUTTON(spStrokeRecognizerMinSize), settings->getStrokeRecognizerMinSize());
@@ -755,6 +759,7 @@ void SettingsDialog::save() {
     settings->setDoActionOnStrokeFiltered(getCheckbox("cbDoActionOnStrokeFiltered"));
     settings->setTrySelectOnStrokeFiltered(getCheckbox("cbTrySelectOnStrokeFiltered"));
     settings->setSnapRecognizedShapesEnabled(getCheckbox("cbSnapRecognizedShapesEnabled"));
+    settings->setSnapToElements(getCheckbox("cbSnapToElements"));
     settings->setRestoreLineWidthEnabled(getCheckbox("cbRestoreLineWidthEnabled"));
     settings->setAreStockIconsUsed(getCheckbox("cbStockIcons"));
     settings->setShowPageShadow(getCheckbox("cbShowPageShadow"));
@@ -1045,6 +1050,9 @@ void SettingsDialog::save() {
             static_cast<double>(gtk_spin_button_get_value(GTK_SPIN_BUTTON(builder.get("spSnapGridTolerance")))));
     settings->setSnapGridSize(static_cast<double>(
             gtk_spin_button_get_value(GTK_SPIN_BUTTON(builder.get("spSnapGridSize"))) * DEFAULT_GRID_SIZE));
+
+    settings->setSnapToElementsTolerance(
+            static_cast<double>(gtk_spin_button_get_value(GTK_SPIN_BUTTON(builder.get("spSnapToElementsTolerance")))));
 
     settings->setStrokeRecognizerMinSize(
             static_cast<double>(gtk_spin_button_get_value(GTK_SPIN_BUTTON(builder.get("spStrokeRecognizerMinSize")))));

@@ -4,11 +4,15 @@
 
 #include "StylusInputHandler.h"
 
-#include <cmath>  // for abs
+#include <algorithm>  // for find
+#include <array>      // for array
+#include <cmath>      // for abs
 
 #include <glib.h>  // for g_message
 
+#include "control/ToolEnums.h"                   // for TOOL_NONE, TOOL_PEN
 #include "control/ToolHandler.h"                 // for ToolHandler
+#include "control/settings/ButtonConfig.h"       // for ButtonConfig
 #include "control/settings/Settings.h"           // for Settings
 #include "control/settings/SettingsEnums.h"      // for Button, BUTTON_ERASER
 #include "gui/PageView.h"                        // for XojPageView
@@ -44,6 +48,21 @@ auto StylusInputHandler::handleImpl(InputEvent const& event) -> bool {
             } else {
                 this->eventsToIgnore = -1;
                 this->actionStart(event);
+            }
+            return true;
+        }
+        // VK640 patch: the barrel button latches the tool (Bút -> Tẩy -> Tay)
+        // instead of switching back to the toolbar tool on release.
+        if (this->vk640BarrelPress(event)) {
+            if (this->inputRunning) {
+                this->actionEnd(event);
+                this->actionStart(event);
+            } else {
+                XojPageView* currentPage = getPageAtCurrentPosition(event);
+                if (currentPage) {
+                    PositionInputData pos = this->getInputDataRelativeToCurrentPage(currentPage, event);
+                    currentPage->onButtonClickEvent(pos);
+                }
             }
             return true;
         }
@@ -115,6 +134,11 @@ auto StylusInputHandler::handleImpl(InputEvent const& event) -> bool {
             } else {
                 this->eventsToIgnore = -1;
             }
+            return true;
+        }
+        // VK640 patch: keep the latched tool; the stock code path below would call
+        // pointActiveToolToToolbarTool() and undo the barrel cycle.
+        if (this->vk640BarrelRelease()) {
             return true;
         }
         if (this->inputRunning) {
@@ -208,4 +232,82 @@ auto StylusInputHandler::changeTool(InputEvent const& event) -> bool {
     }
 
     return true;
+}
+
+// ---------------------------------------------------------------------------
+// VK640 patch: sticky tool on the pen's barrel button
+// ---------------------------------------------------------------------------
+// Upstream behaviour (PenInputHandler::actionEnd) puts the toolbar tool back as
+// soon as the barrel button is released, so the button can only be held. The
+// VEIKK VK640 barrel is a click, not a hold: one press walks Bút -> Tẩy -> Tay
+// and stays there until the next press. Kept in the source tree as a diff
+// against upstream: re-apply after every merge.
+namespace {
+constexpr std::array<ToolType, 3> VK640_TOOL_CYCLE{TOOL_PEN, TOOL_ERASER, TOOL_HAND};
+
+/**
+ * Whether the tool a barrel press latched must be kept when the button is released.
+ * Only the stylus button entries are considered, and only when they select a tool
+ * of the cycle (a "no tool change" entry must keep the stock behaviour).
+ */
+auto shouldLatchStylusTool(Settings* settings, Button button) -> bool {
+    const ButtonConfig* cfg = settings->getButtonConfig(static_cast<unsigned int>(button));
+    if (!cfg) {
+        return false;
+    }
+    const ToolType action = cfg->getAction();
+    return std::find(VK640_TOOL_CYCLE.begin(), VK640_TOOL_CYCLE.end(), action) != VK640_TOOL_CYCLE.end();
+}
+}  // namespace
+
+auto StylusInputHandler::vk640BarrelPress(InputEvent const& event) -> bool {
+    Button button;
+    if (this->modifier2) {
+        button = Button::BUTTON_STYLUS_ONE;
+    } else if (this->modifier3) {
+        button = Button::BUTTON_STYLUS_TWO;
+    } else {
+        return false;
+    }
+
+    Settings* settings = this->inputContext->getSettings();
+    if (!shouldLatchStylusTool(settings, button)) {
+        return false;
+    }
+
+    ToolHandler* toolHandler = this->inputContext->getToolHandler();
+    const ToolType current = toolHandler->getToolType();
+    size_t index = 0;
+    for (size_t i = 0; i < VK640_TOOL_CYCLE.size(); i++) {
+        if (VK640_TOOL_CYCLE[i] == current) {
+            index = i;
+            break;
+        }
+    }
+    const ToolType next = VK640_TOOL_CYCLE[(index + 1) % VK640_TOOL_CYCLE.size()];
+
+    g_message("[VK640 patch] barrel button: %s -> %s", std::string(toolTypeToString(current)).c_str(),
+              std::string(toolTypeToString(next)).c_str());
+
+    // Entering the eraser: take over the eraser mode/thickness configured for this button.
+    if (next == TOOL_ERASER) {
+        if (ButtonConfig* cfg = settings->getButtonConfig(static_cast<unsigned int>(button))) {
+            cfg->applyNoChangeSettings(toolHandler, button);
+        }
+    }
+
+    toolHandler->selectTool(next);
+    toolHandler->fireToolChanged();
+
+    // One barrel press must land on the NEXT tool of the cycle, so the button config
+    // (which alone would select the eraser) must not run first: it would make the first
+    // press skip straight past the eraser.
+    this->vk640Latch = true;
+    return true;
+}
+
+auto StylusInputHandler::vk640BarrelRelease() -> bool {
+    const bool latched = this->vk640Latch;
+    this->vk640Latch = false;
+    return latched;
 }

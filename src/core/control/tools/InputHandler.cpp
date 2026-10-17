@@ -11,6 +11,7 @@
 #include "control/ToolHandler.h"      // for ToolHandler
 #include "model/Point.h"              // for Point, Point::NO_PRESSURE
 #include "model/Stroke.h"             // for Stroke, StrokeTool::ERASER, STR...
+#include "model/StrokeStyle.h"        // for scaleStyle
 #include "util/Color.h"               // for Color
 #include "util/safe_casts.h"          // for as_unsigned
 
@@ -29,7 +30,10 @@ auto InputHandler::createStroke(Control* control) -> std::unique_ptr<Stroke> {
     s->setWidth(h->getThickness());
     s->setColor(h->getColor());
     s->setFill(h->getFill());
-    s->setLineStyle(h->getLineStyle());
+    // The dash pattern is scaled by the pen thickness: a fixed 6-3 pattern closes up into a
+    // nearly solid line on a thick pen. The tool keeps the base pattern, so changing the
+    // thickness recomputes the dashes correctly for the next stroke.
+    s->setLineStyle(StrokeStyle::scaleStyle(h->getLineStyle(), h->getThickness()));
 
     if (h->getToolType() == TOOL_PEN) {
         s->setToolType(StrokeTool::PEN);

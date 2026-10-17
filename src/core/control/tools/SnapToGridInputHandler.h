@@ -10,8 +10,12 @@
  */
 #pragma once
 
+#include <optional>  // for optional
+
 #include "model/PageRef.h"  // for PageRef
 #include "model/Point.h"
+
+#include "ElementSnapper.h"  // for ElementSnapper
 
 class BackgroundConfig;
 class Settings;
@@ -30,6 +34,11 @@ public:
 protected:
     const Settings* settings;
     PageRef currentPage;
+
+    /**
+     * @brief Snapping to the anchor points of the elements already on the page
+     */
+    ElementSnapper elementSnapper;
 
     // Cached offsets (computed once per page)
     mutable double cachedXOffset = 0.0;
@@ -112,4 +121,34 @@ public:
      * @param alt indicates whether snapping mode is altered (via the Alt key)
      */
     [[nodiscard]] Point snap(Point const& pos, Point const& center, bool alt) const;
+
+    /**
+     * @brief Snap to the anchor points (stroke ends, shape vertices, box corners) of the
+     *        elements already on the page, on top of the grid/rotation snapping.
+     *
+     * This is what makes two strokes meet exactly instead of leaving a small gap. The
+     * element snapping wins over the grid snapping: connecting to a real point of the
+     * drawing matters more than landing on a grid line.
+     *
+     * @param pos the coordinate of the point
+     * @param alt indicates whether snapping mode is altered (via the Alt key)
+     * @param latch whether the snapper may hold on to the grabbed anchor, see ElementSnapper::snap
+     */
+    [[nodiscard]] Point snapWithElements(Point const& pos, Point const& center, bool alt, bool latch = true) const;
+
+    /**
+     * @brief Snap a single point to the elements of the page, without grid or rotation snapping
+     * @param latch whether the snapper may hold on to the grabbed anchor
+     */
+    [[nodiscard]] Point snapToElements(Point const& pos, bool alt, bool latch = true) const;
+
+    /**
+     * @brief The anchor the snapper is currently holding, if any. Used to draw the marker.
+     */
+    [[nodiscard]] std::optional<Point> getLatchedAnchor() const;
+
+    /**
+     * @brief Drop the latched anchor and re-read the page's elements on the next snap
+     */
+    void resetElementSnapper();
 };

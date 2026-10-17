@@ -28,7 +28,7 @@ auto CoordinateSystemHandler::createShape(bool isAltDown, bool isShiftDown, bool
     /**
      * Snap point to grid (if enabled)
      */
-    Point c = snappingHandler.snapToGrid(this->currPoint, isAltDown);
+    Point c = snappingHandler.snapWithElements(this->currPoint, this->startPoint, isAltDown);
 
     double width = c.x - this->startPoint.x;
     double height = c.y - this->startPoint.y;

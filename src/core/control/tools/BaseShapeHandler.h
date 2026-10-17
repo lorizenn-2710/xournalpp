@@ -12,6 +12,7 @@
 #pragma once
 
 #include <memory>  // for shared_ptr
+#include <optional>  // for optional
 #include <utility>  // for pair
 #include <vector>   // for vector
 
@@ -63,6 +64,34 @@ public:
      */
     const std::vector<Point>& getShape() const;
 
+    /**
+     * @brief The anchor point of an existing element the shape is currently snapped to, if any.
+     * Used to draw the on-screen magnet marker.
+     */
+    auto getSnapAnchor() const -> std::optional<Point>;
+
+    /**
+     * @brief The parts of the current shape that the viewer cannot see, to be drawn DASHED.
+     *
+     * WHY THIS EXISTS: a solid figure (a box, a pyramid) is a closed wireframe, but it is
+     * unreadable if every edge is drawn the same way. Every textbook draws the edges the viewer
+     * cannot see as dashed lines, and doing that by hand is exactly where the figure comes out
+     * wrong.
+     *
+     * The pieces are computed from the shape that was just built (see createShape), so they can
+     * never disagree with the outline. They are exposed to the view so that the preview under the
+     * pen already shows the dashes, exactly as the figure will be committed.
+     *
+     * Empty for a flat shape: the whole outline is then one solid stroke, as before.
+     */
+    auto getHiddenParts() const -> const std::vector<std::vector<Point>>&;
+
+    /**
+     * @brief Whether the hidden (dashed) edges should be drawn at all. False when the user's pen
+     * style makes a dashed line meaningless (the hidden edges are then part of the solid outline).
+     */
+    auto getDrawHiddenEdges() const -> bool;
+
 private:
     /**
      * @brief Create the shape (to be drawn and added as a stroke), depending on the last event in
@@ -70,6 +99,17 @@ private:
      * containing all those points. WARNING: Stroke thickness is not taken into account.
      */
     virtual std::pair<std::vector<Point>, Range> createShape(bool isAltDown, bool isShiftDown, bool isControlDown) = 0;
+
+    /**
+     * @brief Compute the parts of the shape the viewer cannot see. Overridden by the handlers that
+     * draw a solid figure; the default (a flat shape) has none.
+     *
+     * @param shape the points of the finished shape, as returned by createShape()
+     */
+    virtual auto createHiddenParts(const std::vector<Point>& shape) const -> std::vector<std::vector<Point>> {
+        (void)shape;
+        return {};
+    }
 
     /**
      * @brief Update the current shape with the latest event info.
@@ -93,6 +133,12 @@ protected:
 
 protected:
     std::vector<Point> shape;
+
+    /**
+     * @brief Parts of `shape` the viewer cannot see (see getHiddenParts). Recomputed on every
+     * updateShape() so the preview and the committed figure always agree.
+     */
+    std::vector<std::vector<Point>> hiddenParts;
 
     /**
      * @brief Bounding box of the stroke after its last update

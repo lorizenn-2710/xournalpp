@@ -257,6 +257,17 @@ struct ActionProperties<Action::GRID_SNAPPING> {
 };
 
 template <>
+struct ActionProperties<Action::SNAP_TO_ELEMENTS> {
+    using state_type = bool;
+    static state_type initialState(Control* ctrl) { return ctrl->getSettings()->isSnapToElements(); }
+    static void callback(GSimpleAction* ga, GVariant* p, Control* ctrl) {
+        g_simple_action_set_state(ga, p);
+        bool enable = g_variant_get_boolean(p);
+        ctrl->setSnapToElements(enable);
+    }
+};
+
+template <>
 struct ActionProperties<Action::PREFERENCES> {
     using app_namespace = std::true_type;
     static void callback(GSimpleAction*, GVariant*, Control* ctrl) { ctrl->showSettings(); }
@@ -615,6 +626,9 @@ struct ActionPropDrawingTypes {
         actionDB->setActionState(Action::TOOL_DRAW_COORDINATE_SYSTEM, false);
         actionDB->setActionState(Action::TOOL_DRAW_LINE, false);
         actionDB->setActionState(Action::TOOL_DRAW_SPLINE, false);
+        actionDB->setActionState(Action::TOOL_DRAW_TRIANGLE, false);
+        actionDB->setActionState(Action::TOOL_DRAW_BOX, false);
+        actionDB->setActionState(Action::TOOL_DRAW_PYRAMID, false);
 
         g_simple_action_set_state(ga, p);
         bool enabled = g_variant_get_boolean(p);
@@ -639,6 +653,12 @@ template <>
 struct ActionProperties<Action::TOOL_DRAW_LINE>: ActionPropDrawingTypes<DRAWING_TYPE_LINE> {};
 template <>
 struct ActionProperties<Action::TOOL_DRAW_SPLINE>: ActionPropDrawingTypes<DRAWING_TYPE_SPLINE> {};
+template <>
+struct ActionProperties<Action::TOOL_DRAW_TRIANGLE>: ActionPropDrawingTypes<DRAWING_TYPE_TRIANGLE> {};
+template <>
+struct ActionProperties<Action::TOOL_DRAW_BOX>: ActionPropDrawingTypes<DRAWING_TYPE_BOX> {};
+template <>
+struct ActionProperties<Action::TOOL_DRAW_PYRAMID>: ActionPropDrawingTypes<DRAWING_TYPE_PYRAMID> {};
 
 template <>
 struct ActionProperties<Action::SETSQUARE> {
@@ -647,6 +667,7 @@ struct ActionProperties<Action::SETSQUARE> {
     static void callback(GSimpleAction* ga, GVariant*, Control* ctrl) {
         // Only one GeometryTool is activated at a time
         ctrl->getActionDatabase()->setActionState(Action::COMPASS, false);
+        ctrl->getActionDatabase()->setActionState(Action::PROTRACTOR, false);
         g_simple_action_set_state(ga, makeGVariant(ctrl->toggleSetsquare()));
     }
 };
@@ -658,7 +679,20 @@ struct ActionProperties<Action::COMPASS> {
     static void callback(GSimpleAction* ga, GVariant*, Control* ctrl) {
         // Only one GeometryTool is activated at a time
         ctrl->getActionDatabase()->setActionState(Action::SETSQUARE, false);
+        ctrl->getActionDatabase()->setActionState(Action::PROTRACTOR, false);
         g_simple_action_set_state(ga, makeGVariant(ctrl->toggleCompass()));
+    }
+};
+
+template <>
+struct ActionProperties<Action::PROTRACTOR> {
+    using state_type = bool;
+    static constexpr state_type initialState(Control*) { return false; }
+    static void callback(GSimpleAction* ga, GVariant*, Control* ctrl) {
+        // Only one GeometryTool is activated at a time
+        ctrl->getActionDatabase()->setActionState(Action::SETSQUARE, false);
+        ctrl->getActionDatabase()->setActionState(Action::COMPASS, false);
+        g_simple_action_set_state(ga, makeGVariant(ctrl->toggleProtractor()));
     }
 };
 
