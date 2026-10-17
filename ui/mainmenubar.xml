@@ -155,6 +155,10 @@
      <attribute name="label" translatable="yes">Grid Snapping</attribute>
      <attribute name="action">win.grid-snapping</attribute>
     </item>
+    <item>
+     <attribute name="label" translatable="yes">Snap to Elements</attribute>
+     <attribute name="action">win.snap-to-elements</attribute>
+    </item>
    </section>
    <section>
     <item>
@@ -624,6 +628,20 @@
       <attribute name="label" translatable="yes">Draw Spline</attribute>
       <attribute name="action">win.tool-draw-spline</attribute>
       <attribute name="accel">&lt;Ctrl&gt;8</attribute>
+     </item>
+     <item>
+      <attribute name="label" translatable="yes">Draw Triangle</attribute>
+      <attribute name="action">win.tool-draw-triangle</attribute>
+      <attribute name="accel">&lt;Ctrl&gt;9</attribute>
+     </item>
+     <item>
+      <attribute name="label" translatable="yes">Draw Box</attribute>
+      <attribute name="action">win.tool-draw-box</attribute>
+      <attribute name="accel">&lt;Ctrl&gt;0</attribute>
+     </item>
+     <item>
+      <attribute name="label" translatable="yes">Draw Pyramid</attribute>
+      <attribute name="action">win.tool-draw-pyramid</attribute>
      </item>
     </submenu>
    </section>

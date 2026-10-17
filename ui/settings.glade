@@ -116,6 +116,14 @@
     <property name="step-increment">0.01</property>
     <property name="page-increment">10</property>
   </object>
+
+  <object class="GtkAdjustment" id="adjustmentSnapToElementsTolerance">
+    <property name="lower">0</property>
+    <property name="upper">100</property>
+    <property name="value">14.17</property>
+    <property name="step-increment">1</property>
+    <property name="page-increment">10</property>
+  </object>
   <object class="GtkAdjustment" id="adjustmentSnapGridTolerance">
     <property name="lower">0.10</property>
     <property name="upper">1</property>
@@ -5213,6 +5221,21 @@ Determination Radius: Radius at which modifiers will lock in until finished draw
                                 <property name="can-focus">False</property>
                                 <property name="label-xalign">0.009999999776482582</property>
                                 <child>
+                                  <object class="GtkCheckButton" id="cbSnapToElements">
+                                    <property name="label" translatable="yes">Snap to elements (connect strokes exactly)</property>
+                                    <property name="visible">True</property>
+                                    <property name="can-focus">True</property>
+                                    <property name="receives-default">False</property>
+                                    <property name="tooltip-text" translatable="yes">While drawing, pull the pen onto the end points and the vertices of the shapes already on the page, so that two strokes meet exactly instead of leaving a small gap. Hold Alt while drawing to suspend it.</property>
+                                    <property name="draw-indicator">True</property>
+                                  </object>
+                                  <packing>
+                                    <property name="expand">False</property>
+                                    <property name="fill">True</property>
+                                    <property name="position">0</property>
+                                  </packing>
+                                </child>
+                                <child>
                                   <object class="GtkBox" id="box51">
                                     <property name="visible">True</property>
                                     <property name="can-focus">False</property>
@@ -5222,7 +5245,7 @@ Determination Radius: Radius at which modifiers will lock in until finished draw
                                     <property name="orientation">vertical</property>
                                     <property name="spacing">6</property>
                                     <child>
-                                      <!-- n-columns=2 n-rows=3 -->
+                                      <!-- n-columns=2 n-rows=4 -->
                                       <object class="GtkGrid" id="sid148">
                                         <property name="visible">True</property>
                                         <property name="can-focus">False</property>
@@ -5307,6 +5330,34 @@ Determination Radius: Radius at which modifiers will lock in until finished draw
                                           <packing>
                                             <property name="left-attach">1</property>
                                             <property name="top-attach">2</property>
+                                          </packing>
+                                        </child>
+                                        <child>
+                                          <object class="GtkLabel" id="lbSnapToElementsTolerance">
+                                            <property name="name">lbSnapToElementsTolerance</property>
+                                            <property name="visible">True</property>
+                                            <property name="can-focus">False</property>
+                                            <property name="label" translatable="yes">Snap to elements tolerance</property>
+                                          </object>
+                                          <packing>
+                                            <property name="left-attach">0</property>
+                                            <property name="top-attach">3</property>
+                                          </packing>
+                                        </child>
+                                        <child>
+                                          <object class="GtkSpinButton" id="spSnapToElementsTolerance">
+                                            <property name="name">spSnapToElementsTolerance</property>
+                                            <property name="visible">True</property>
+                                            <property name="can-focus">True</property>
+                                            <property name="adjustment">adjustmentSnapToElementsTolerance</property>
+                                            <property name="climb-rate">1</property>
+                                            <property name="digits">2</property>
+                                            <property name="value">14.17</property>
+                                            <property name="tooltip-text" translatable="yes">How close (in points) the pen must come to the end point or a vertex of an existing stroke before it is connected to it. 28.34 pt = 1 cm.</property>
+                                          </object>
+                                          <packing>
+                                            <property name="left-attach">1</property>
+                                            <property name="top-attach">3</property>
                                           </packing>
                                         </child>
                                       </object>
