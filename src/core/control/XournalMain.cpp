@@ -135,6 +135,13 @@ void checkForEmergencySave(Control* control) {
         return;
     }
 
+    std::error_code ec;
+    auto sz = fs::file_size(file, ec);
+    if (!ec && sz <= 350) {
+        fs::remove(file, ec);
+        return;
+    }
+
     const std::string msg = _("Xournal++ crashed last time. Would you like to restore the last edited file?");
     enum { DELETE_FILE = 1, RESTORE_FILE };
     XojMsgBox::askQuestion(
@@ -458,6 +465,9 @@ void on_startup(GApplication* application, XMPtr app_data) {
     app_data->win->show(nullptr);
 
     fs::path p;
+    bool isRestoredScratchpad = false;
+    int pageToOpen = app_data->openAtPageNumber - 1;
+
     if (app_data->optFilename) {
         if (g_strv_length(app_data->optFilename) != 1) {
             const std::string msg = _("Sorry, Xournal++ can only open one file at once.\n"
@@ -470,29 +480,72 @@ void on_startup(GApplication* application, XMPtr app_data) {
         } catch (const fs::filesystem_error& e) {
             g_warning("Unable to convert path %s to absolute path: %s", app_data->optFilename[0], e.what());
         }
-    } else if (app_data->control->getSettings()->isAutoloadMostRecent()) {
-        auto most_recent = RecentManager::getMostRecent();
-        if (most_recent) {
-            if (auto opt = Util::fromUri(gtk_recent_info_get_uri(most_recent.get()))) {
-                p = opt.value();
-            }
-            if (std::error_code err; !fs::exists(p, err)) {
-                if (err) {
-                    g_warning("Failed to determine if recent path exists \"%s\": %s", char_cast(p.u8string().c_str()),
-                              err.message().c_str());
-                } else {
-                    g_warning("Tried to open the most recent file but it no longer exists:\n\"%s\"",
-                              char_cast(p.u8string().c_str()));
+    } else {
+        auto sessionIni = Util::getConfigFolder() / "session.ini";
+        if (fs::exists(sessionIni)) {
+            GKeyFile* kf = g_key_file_new();
+            if (g_key_file_load_from_file(kf, Util::toGFilename(sessionIni).c_str(), G_KEY_FILE_NONE, nullptr)) {
+                gboolean active = g_key_file_get_boolean(kf, "session", "active", nullptr);
+                gboolean isScratchpad = g_key_file_get_boolean(kf, "session", "is_scratchpad", nullptr);
+                gint sessionPage = g_key_file_get_integer(kf, "session", "page", nullptr);
+                gchar* rawFile = g_key_file_get_string(kf, "session", "filepath", nullptr);
+                std::string fileStr = rawFile ? rawFile : "";
+                g_free(rawFile);
+
+                if (active) {
+                    if (isScratchpad) {
+                        auto sessionFile = Util::getConfigFolder() / "session.xopp";
+                        if (fs::exists(sessionFile)) {
+                            p = sessionFile;
+                            isRestoredScratchpad = true;
+                            if (pageToOpen < 0) {
+                                pageToOpen = sessionPage;
+                            }
+                        }
+                    } else if (!fileStr.empty()) {
+                        fs::path cand = fs::path(fileStr);
+                        std::error_code ec;
+                        if (fs::exists(cand, ec)) {
+                            p = cand;
+                            if (pageToOpen < 0) {
+                                pageToOpen = sessionPage;
+                            }
+                        }
+                    }
                 }
-                p = fs::path();
+            }
+            g_key_file_free(kf);
+        }
+
+        if (p.empty() && app_data->control->getSettings()->isAutoloadMostRecent()) {
+            auto most_recent = RecentManager::getMostRecent();
+            if (most_recent) {
+                if (auto opt = Util::fromUri(gtk_recent_info_get_uri(most_recent.get()))) {
+                    p = opt.value();
+                }
+                if (std::error_code err; !fs::exists(p, err)) {
+                    if (err) {
+                        g_warning("Failed to determine if recent path exists \"%s\": %s",
+                                  char_cast(p.u8string().c_str()), err.message().c_str());
+                    } else {
+                        g_warning("Tried to open the most recent file but it no longer exists:\n\"%s\"",
+                                  char_cast(p.u8string().c_str()));
+                    }
+                    p = fs::path();
+                }
             }
         }
     }
 
     app_data->control->openFileWithoutSavingTheCurrentDocument(
-            std::move(p), app_data->attachMode, app_data->openAtPageNumber - 1,
-            [ctrl = app_data->control.get(), app = GTK_APPLICATION(application)](bool) {
+            std::move(p), app_data->attachMode, pageToOpen,
+            [ctrl = app_data->control.get(), app = GTK_APPLICATION(application), isRestoredScratchpad](bool success) {
                 ctrl->getScheduler()->start();
+
+                if (isRestoredScratchpad && success) {
+                    ctrl->getDocument()->setFilepath("");
+                    ctrl->updateWindowTitle();
+                }
 
                 checkForEmergencySave(ctrl);
 

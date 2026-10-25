@@ -118,6 +118,7 @@ public:
     void exportAsPdf();
     void exportAs();
     void quit(bool allowCancel = true);
+    void saveSessionOnQuit();
 
     /**
      * @brief Asynchronously saves the document and calls callback afterwards with boolean parameter true on success.

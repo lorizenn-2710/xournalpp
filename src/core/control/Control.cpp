@@ -39,6 +39,7 @@
 #include "control/settings/ViewModes.h"                          // for ViewM..
 #include "control/tools/TextEditor.h"                            // for Text...
 #include "control/xojfile/LoadHandler.h"                         // for Load...
+#include "control/xojfile/SaveHandler.h"
 #include "control/zoom/ZoomControl.h"                            // for Zoom...
 #include "gui/FloatingToolbox.h"                                 // for Floa...
 #include "gui/MainWindow.h"                                      // for Main...
@@ -1836,6 +1837,10 @@ void Control::fileLoaded(int scrollToPage) {
                 md->page = scrollToPage;
             }
             loadMetadata(*md);
+        } else if (scrollToPage >= 0) {
+            MetadataEntry newMd;
+            newMd.page = scrollToPage;
+            loadMetadata(newMd);
         }
         RecentManager::addRecentFileFilename(filepath);
 
@@ -2177,8 +2182,94 @@ void Control::resetSavedStatus() {
     this->updateWindowTitle();
 }
 
+void Control::saveSessionOnQuit() {
+    if (!this->doc) {
+        return;
+    }
+
+    clearSelectionEndText();
+
+    this->doc->lock_shared();
+    fs::path filepath = this->doc->getFilepath();
+    fs::path pdfpath = this->doc->getPdfFilepath();
+    int pageNo = static_cast<int>(this->getCurrentPageNo());
+    double currentZoom = this->zoom ? this->zoom->getZoomReal() : 1.0;
+
+    bool hasAnnotations = false;
+    for (size_t i = 0; i < this->doc->getPageCount(); ++i) {
+        auto page = this->doc->getPage(i);
+        if (page && page->isAnnotated()) {
+            hasAnnotations = true;
+            break;
+        }
+    }
+    this->doc->unlock_shared();
+
+    bool isChanged = this->undoRedo && this->undoRedo->isChanged();
+    auto sessionFile = Util::getConfigFolder() / "session.xopp";
+    auto sessionIni = Util::getConfigFolder() / "session.ini";
+
+    auto writeSessionIni = [](const fs::path& iniPath, const fs::path& path, bool isScratchpad, int page, double zoom) {
+        GKeyFile* kf = g_key_file_new();
+        g_key_file_set_boolean(kf, "session", "active", TRUE);
+        g_key_file_set_boolean(kf, "session", "is_scratchpad", isScratchpad ? TRUE : FALSE);
+        g_key_file_set_string(kf, "session", "filepath", path.empty() ? "" : char_cast(path.u8string().c_str()));
+        g_key_file_set_integer(kf, "session", "page", page);
+        g_key_file_set_double(kf, "session", "zoom", zoom);
+
+        g_key_file_save_to_file(kf, Util::toGFilename(iniPath).c_str(), nullptr);
+        g_key_file_free(kf);
+    };
+
+    if (!filepath.empty()) {
+        if (isChanged) {
+            SaveHandler handler;
+            this->doc->lock_shared();
+            handler.prepareSave(this->doc, filepath);
+            this->doc->unlock_shared();
+            handler.saveTo(filepath, this);
+
+            if (handler.getErrorMessage().empty()) {
+                this->doc->lock();
+                handler.updateDocumentInfo(this->doc);
+                this->doc->unlock();
+                if (this->undoRedo) {
+                    this->undoRedo->documentSaved();
+                }
+            } else {
+                g_warning("Could not auto-save to %s on quit: %s", filepath.string().c_str(),
+                          handler.getErrorMessage().c_str());
+            }
+        }
+        writeSessionIni(sessionIni, filepath, false, pageNo, currentZoom);
+    } else if (hasAnnotations || isChanged) {
+        SaveHandler handler;
+        this->doc->lock_shared();
+        handler.prepareSave(this->doc, sessionFile);
+        this->doc->unlock_shared();
+        handler.saveTo(sessionFile, this);
+
+        if (handler.getErrorMessage().empty()) {
+            if (this->undoRedo) {
+                this->undoRedo->documentSaved();
+            }
+            writeSessionIni(sessionIni, fs::path(), true, pageNo, currentZoom);
+        } else {
+            g_warning("Could not save session to %s: %s", sessionFile.string().c_str(),
+                      handler.getErrorMessage().c_str());
+        }
+    } else if (!pdfpath.empty()) {
+        writeSessionIni(sessionIni, pdfpath, false, pageNo, currentZoom);
+    } else {
+        std::error_code ec;
+        fs::remove(sessionFile, ec);
+        fs::remove(sessionIni, ec);
+    }
+}
+
 void Control::quit(bool allowCancel) {
     g_message("Quitting");
+    saveSessionOnQuit();
     auto afterClosed = [this, allowCancel](bool closed) {
         if (!closed) {
             g_message("Closing document failed or cancelled");
