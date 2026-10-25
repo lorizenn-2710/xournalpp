@@ -17,6 +17,7 @@
 #include "control/settings/Settings.h"                  // for Settings
 #include "control/settings/SettingsEnums.h"             // for SCROLLBAR_HIDE_HO...
 #include "control/zoom/ZoomControl.h"                   // for ZoomControl
+#include "plugin/PluginController.h"                    // for PluginController
 #include "gui/FloatingToolbox.h"                        // for FloatingToolbox
 #include "gui/GladeGui.h"                               // for GladeGui
 #include "gui/PdfFloatingToolbox.h"                     // for PdfFloatingToolbox
@@ -114,11 +115,43 @@ MainWindow::MainWindow(GladeSearchpath* gladeSearchPath, Control* control, GtkAp
             this);
 
     // "watch over" all key events
-    auto keyPropagate = +[](GtkWidget* w, GdkEvent* e, gpointer) {
+    auto keyPropagate = +[](GtkWidget* w, GdkEvent* e, gpointer data) -> gboolean {
+        auto* ev = (GdkEventKey*)e;
+        if (ev->type == GDK_KEY_PRESS) {
+            guint keyval = ev->keyval;
+            GdkModifierType state = (GdkModifierType)(ev->state & gtk_accelerator_get_default_mod_mask());
+            // Shift+Y / Alt+Y: invoke split PDF note directly, bypassing GTK accel & IME drop
+            if (((keyval == GDK_KEY_Y || ((keyval == GDK_KEY_y || keyval == GDK_KEY_Y) && (state & GDK_SHIFT_MASK))) &&
+                 !(state & (GDK_CONTROL_MASK | GDK_MOD1_MASK))) ||
+                ((keyval == GDK_KEY_y || keyval == GDK_KEY_Y) && (state & GDK_MOD1_MASK) && !(state & GDK_CONTROL_MASK))) {
+                auto* self = static_cast<MainWindow*>(data);
+                GtkWidget* focus = gtk_window_get_focus(GTK_WINDOW(w));
+                if (!focus || !GTK_IS_ENTRY(focus)) {
+                    if (auto* pc = self->getControl()->getPluginController()) {
+                        if (pc->executeCallback("vk640SplitPdfNoteShift")) {
+                            return TRUE;
+                        }
+                    }
+                }
+            }
+            // Ctrl+Y: prioritize plugin split note over native Redo
+            if ((keyval == GDK_KEY_y || keyval == GDK_KEY_Y) && (state & GDK_CONTROL_MASK) &&
+                !(state & (GDK_SHIFT_MASK | GDK_MOD1_MASK))) {
+                auto* self = static_cast<MainWindow*>(data);
+                GtkWidget* focus = gtk_window_get_focus(GTK_WINDOW(w));
+                if (!focus || !GTK_IS_ENTRY(focus)) {
+                    if (auto* pc = self->getControl()->getPluginController()) {
+                        if (pc->executeCallback("vk640SplitPdfNote")) {
+                            return TRUE;
+                        }
+                    }
+                }
+            }
+        }
         return gtk_window_propagate_key_event(GTK_WINDOW(w), (GdkEventKey*)(e));
     };
-    g_signal_connect(this->window, "key-press-event", G_CALLBACK(keyPropagate), nullptr);
-    g_signal_connect(this->window, "key-release-event", G_CALLBACK(keyPropagate), nullptr);
+    g_signal_connect(this->window, "key-press-event", G_CALLBACK(keyPropagate), this);
+    g_signal_connect(this->window, "key-release-event", G_CALLBACK(keyPropagate), this);
 
     updateScrollbarSidebarPosition();
 

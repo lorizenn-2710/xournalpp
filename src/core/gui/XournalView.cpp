@@ -21,6 +21,7 @@
 #include "control/tools/CursorSelectionType.h"   // for CURSOR_SELECTION_NONE
 #include "control/tools/EditSelection.h"         // for EditSelection
 #include "control/zoom/ZoomControl.h"            // for ZoomControl
+#include "plugin/PluginController.h"             // for PluginController
 #include "gui/MainWindow.h"                      // for MainWindow
 #include "gui/PdfFloatingToolbox.h"              // for PdfFloatingToolbox
 #include "gui/inputdevices/GeometryToolInputHandler.h"  // for GeometryToolInputHandler
@@ -336,6 +337,28 @@ auto XournalView::onKeyPressEvent(const KeyEvent& event) -> bool {
         }
         return true;
     }
+
+    // VK640 / Split PDF Note shortcuts:
+    // 1. Shift+Y: physical Shift+y produces GDK_KEY_Y (with Shift consumed or in state)
+    // 2. Alt+Y: alternate ergonomic trigger immune to IME
+    // 3. Ctrl+Y: prevent Redo collision and invoke split note if plugin is active
+    if (((keyval == GDK_KEY_Y || ((keyval == GDK_KEY_y || keyval == GDK_KEY_Y) && (state & GDK_SHIFT_MASK))) &&
+         !(state & (GDK_CONTROL_MASK | GDK_MOD1_MASK))) ||
+        ((keyval == GDK_KEY_y || keyval == GDK_KEY_Y) && (state & GDK_MOD1_MASK) && !(state & GDK_CONTROL_MASK))) {
+        if (auto* pc = control->getPluginController()) {
+            if (pc->executeCallback("vk640SplitPdfNoteShift")) {
+                return true;
+            }
+        }
+    }
+    if ((keyval == GDK_KEY_y || keyval == GDK_KEY_Y) && (state & GDK_CONTROL_MASK) && !(state & GDK_SHIFT_MASK)) {
+        if (auto* pc = control->getPluginController()) {
+            if (pc->executeCallback("vk640SplitPdfNote")) {
+                return true;
+            }
+        }
+    }
+
     return false;
 }
 

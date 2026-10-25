@@ -50,6 +50,12 @@ public:
      */
     void showPluginManager() const;
 
+    /**
+     * Execute a callback function by name across all enabled plugins.
+     * Returns true if any plugin executed the callback successfully.
+     */
+    bool executeCallback(const std::string& callbackName);
+
 private:
     /**
      * The main controller
