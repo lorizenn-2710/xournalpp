@@ -335,8 +335,27 @@ void Plugin::loadScript() {
     }
 }
 
+auto Plugin::hasFunction(const std::string& fnc) const -> bool {
+    if (!this->valid || !this->enabled || !this->lua) {
+        return false;
+    }
+
+    lua_getglobal(this->lua.get(), fnc.c_str());
+    bool isFunc = (lua_isfunction(this->lua.get(), -1) == 1);
+    lua_pop(this->lua.get(), 1);
+    return isFunc;
+}
+
 auto Plugin::callFunction(const std::string& fnc, ptrdiff_t mode) -> bool {
+    if (!this->valid || !this->enabled || !this->lua) {
+        return false;
+    }
+
     lua_getglobal(lua.get(), fnc.c_str());
+    if (lua_isfunction(lua.get(), -1) != 1) {
+        lua_pop(lua.get(), 1);
+        return false;
+    }
 
     int numArgs = 0;
 
@@ -348,9 +367,9 @@ auto Plugin::callFunction(const std::string& fnc, ptrdiff_t mode) -> bool {
     // Run the function
     if (lua_pcall(lua.get(), numArgs, 0, 0)) {
         const char* errMsg = lua_tostring(lua.get(), -1);
-        XojMsgBox::showPluginMessage(name, errMsg, true);
-
         g_warning("Error in Plugin: \"%s\", error: \"%s\"", name.c_str(), errMsg);
+        XojMsgBox::showPluginMessage(name, errMsg, true);
+        lua_pop(lua.get(), 1);
         return false;
     }
 
@@ -358,16 +377,24 @@ auto Plugin::callFunction(const std::string& fnc, ptrdiff_t mode) -> bool {
 }
 
 auto Plugin::callFunction(const std::string& fnc, const char* s) -> bool {
+    if (!this->valid || !this->enabled || !this->lua) {
+        return false;
+    }
+
     lua_getglobal(lua.get(), fnc.c_str());
+    if (lua_isfunction(lua.get(), -1) != 1) {
+        lua_pop(lua.get(), 1);
+        return false;
+    }
 
     lua_pushstring(lua.get(), s);
 
     // Run the function
     if (lua_pcall(lua.get(), 1, 0, 0)) {
         const char* errMsg = lua_tostring(lua.get(), -1);
-        XojMsgBox::showPluginMessage(name, errMsg, true);
-
         g_warning("Error in Plugin: \"%s\", error: \"%s\"", name.c_str(), errMsg);
+        XojMsgBox::showPluginMessage(name, errMsg, true);
+        lua_pop(lua.get(), 1);
         return false;
     }
 

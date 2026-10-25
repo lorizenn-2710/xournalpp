@@ -192,8 +192,8 @@ void PluginController::registerToolButtons(ToolMenuHandler* toolMenuHandler) {
 bool PluginController::executeCallback(const std::string& callbackName) {
 #ifdef ENABLE_PLUGINS
     for (auto&& p: this->plugins) {
-        if (p->callFunction(callbackName)) {
-            return true;
+        if (p->hasFunction(callbackName)) {
+            return p->callFunction(callbackName);
         }
     }
 #endif

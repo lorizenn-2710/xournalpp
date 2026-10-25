@@ -195,6 +195,9 @@ public:
     /// Get Plugin from lua engine
     static auto getPluginFromLua(lua_State* lua) -> Plugin*;
 
+    /// Check if lua function exists
+    auto hasFunction(const std::string& fnc) const -> bool;
+
     /// Execute lua function
     auto callFunction(const std::string& fnc, ptrdiff_t mode = std::numeric_limits<ptrdiff_t>::max()) -> bool;
     auto callFunction(const std::string& fnc, const char* s) -> bool;
