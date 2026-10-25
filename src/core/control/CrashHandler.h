@@ -12,6 +12,9 @@
 #pragma once
 
 class Document;
+class Control;
+
 void setEmergencyDocument(const Document* doc);
+void setEmergencyControl(Control* ctrl);
 void installCrashHandlers();
 void emergencySave();

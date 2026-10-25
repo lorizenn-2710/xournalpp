@@ -157,6 +157,7 @@ Control::Control(GApplication* gtkApp, GladeSearchpath* gladeSearchPath, bool di
 
     // for crashhandling
     setEmergencyDocument(this->doc);
+    setEmergencyControl(this);
 
 
     this->zoom = new ZoomControl();
@@ -203,6 +204,7 @@ Control::~Control() {
     this->sidebar = nullptr;
 
     setEmergencyDocument(nullptr);
+    setEmergencyControl(nullptr);
     delete this->doc;
     this->doc = nullptr;
     delete this->searchBar;

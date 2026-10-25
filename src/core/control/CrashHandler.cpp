@@ -5,6 +5,7 @@
 #include <iostream>
 #include <string>
 
+#include "control/Control.h"
 #include "control/xojfile/SaveHandler.h"  // for SaveHandler
 #include "util/PathUtil.h"
 #include "util/Stacktrace.h"
@@ -13,12 +14,23 @@
 #include "filesystem.h"  // for path
 
 static std::atomic<const Document*> document = nullptr;
+static std::atomic<Control*> emergencyControl = nullptr;
 static std::atomic<int> alreadyCrashed = 0;
+
+void setEmergencyControl(Control* ctrl) { emergencyControl = ctrl; }
 
 extern "C" void forceClose(int sig) {
     g_warning("Force close requested with signal %i", sig);
-    emergencySave();
-    exit(1);
+    Control* ctrl = emergencyControl.load();
+    if (ctrl) {
+        ctrl->saveSessionOnQuit();
+        auto emergencyFile = Util::getConfigFile("emergencysave.xopp");
+        std::error_code ec;
+        fs::remove(emergencyFile, ec);
+    } else {
+        emergencySave();
+    }
+    exit(0);
 }
 
 void setEmergencyDocument(const Document* doc) { document = doc; }
@@ -73,6 +85,7 @@ extern "C" void crashHandler(int sig) {
 void installCrashHandlers() {
     std::signal(SIGTERM, forceClose);
     std::signal(SIGINT, forceClose);
+    std::signal(SIGHUP, forceClose);
     std::signal(SIGSEGV, crashHandler);
     std::signal(SIGFPE, crashHandler);
     std::signal(SIGILL, crashHandler);

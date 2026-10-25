@@ -43,6 +43,7 @@
 #include "util/i18n.h"                       // for _, FS, _F
 
 #include "Control.h"       // for Control
+#include "control/zoom/ZoomControl.h"
 #include "ExportHelper.h"  // for exportImg, exportPdf
 #include "config-dev.h"    // for ERRORLOG_DIR
 #include "config-git.h"    // for GIT_BRANCH, GIT_ORIGIN_O...
@@ -467,6 +468,7 @@ void on_startup(GApplication* application, XMPtr app_data) {
     fs::path p;
     bool isRestoredScratchpad = false;
     int pageToOpen = app_data->openAtPageNumber - 1;
+    double sessionZoom = 0.0;
 
     if (app_data->optFilename) {
         if (g_strv_length(app_data->optFilename) != 1) {
@@ -488,6 +490,7 @@ void on_startup(GApplication* application, XMPtr app_data) {
                 gboolean active = g_key_file_get_boolean(kf, "session", "active", nullptr);
                 gboolean isScratchpad = g_key_file_get_boolean(kf, "session", "is_scratchpad", nullptr);
                 gint sessionPage = g_key_file_get_integer(kf, "session", "page", nullptr);
+                sessionZoom = g_key_file_get_double(kf, "session", "zoom", nullptr);
                 gchar* rawFile = g_key_file_get_string(kf, "session", "filepath", nullptr);
                 std::string fileStr = rawFile ? rawFile : "";
                 g_free(rawFile);
@@ -539,12 +542,17 @@ void on_startup(GApplication* application, XMPtr app_data) {
 
     app_data->control->openFileWithoutSavingTheCurrentDocument(
             std::move(p), app_data->attachMode, pageToOpen,
-            [ctrl = app_data->control.get(), app = GTK_APPLICATION(application), isRestoredScratchpad](bool success) {
+            [ctrl = app_data->control.get(), app = GTK_APPLICATION(application), isRestoredScratchpad,
+             sessionZoom](bool success) {
                 ctrl->getScheduler()->start();
 
                 if (isRestoredScratchpad && success) {
                     ctrl->getDocument()->setFilepath("");
                     ctrl->updateWindowTitle();
+                }
+
+                if (sessionZoom > 0.05 && ctrl->getZoomControl()) {
+                    ctrl->getZoomControl()->setZoom(sessionZoom);
                 }
 
                 checkForEmergencySave(ctrl);
@@ -620,9 +628,16 @@ auto on_handle_local_options(GApplication*, GVariantDict*, XMPtr app_data) -> gi
 }
 
 void on_shutdown(GApplication*, XMPtr app_data) {
-    app_data->control->saveSettings();
-    app_data->win->getXournal()->clearSelection();
-    app_data->control->getScheduler()->stop();
+    if (app_data && app_data->control) {
+        app_data->control->saveSessionOnQuit();
+        app_data->control->saveSettings();
+        if (app_data->control->getScheduler()) {
+            app_data->control->getScheduler()->stop();
+        }
+    }
+    if (app_data && app_data->win && app_data->win->getXournal()) {
+        app_data->win->getXournal()->clearSelection();
+    }
 }
 
 }  // namespace
