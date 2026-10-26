@@ -520,7 +520,7 @@ void on_startup(GApplication* application, XMPtr app_data) {
             g_key_file_free(kf);
         }
 
-        if (p.empty() && app_data->control->getSettings()->isAutoloadMostRecent()) {
+        if (p.empty()) {
             auto most_recent = RecentManager::getMostRecent();
             if (most_recent) {
                 if (auto opt = Util::fromUri(gtk_recent_info_get_uri(most_recent.get()))) {

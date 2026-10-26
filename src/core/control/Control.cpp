@@ -2265,7 +2265,8 @@ void Control::saveSessionOnQuit() {
     } else {
         std::error_code ec;
         fs::remove(sessionFile, ec);
-        fs::remove(sessionIni, ec);
+        // Do not remove sessionIni when closing an empty document.
+        // This ensures the previous valid session is preserved if an empty window or secondary instance closes.
     }
 }
 
