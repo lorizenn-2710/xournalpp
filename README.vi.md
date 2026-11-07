@@ -4,6 +4,8 @@
 
 Xournal++ là ứng dụng ghi chú bằng bút, viết trên nền giấy và chú thích PDF, được xây dựng bằng C++ và GTK3. Ứng dụng chạy trên Linux, Windows và macOS. Đây là **fork** của dự án chính chủ, không phải kênh phát hành chính thức của nhóm Xournal++.
 
+> **Trạng thái cài đặt:** Hiện chưa có bộ cài Windows/Linux được kiểm thử để tái tạo đầy đủ bản ứng dụng tùy chỉnh đang dùng trên máy phát triển. Bộ cài chính chủ chỉ chứa Xournal++ gốc. Bản tùy chỉnh đã được build và kiểm thử trên Linux; Windows chưa được xác minh.
+
 ![Giao diện Xournal++ trên Linux](readme/main.png)
 
 ## Tính năng
@@ -61,7 +63,7 @@ Xournal++ Mobile là **dự án riêng**, không phải bản desktop trong kho 
 
 ## Cài bản tùy chỉnh từ mã nguồn
 
-Đây là cách lấy các công cụ Toán–Vật lý và sổ nháp nổi của fork. Các lệnh dưới đây dành cho Ubuntu/Debian; với hệ khác, xem [phụ thuộc theo hệ điều hành](readme/LinuxBuild.md). Bản tùy chỉnh chưa có gói phát hành cài sẵn trên trang Releases.
+Đây là cách build mã C++ chứa các công cụ Toán–Vật lý và sổ nháp nổi của fork. Các lệnh dưới đây dành cho Ubuntu/Debian; với hệ khác, xem [phụ thuộc theo hệ điều hành](readme/LinuxBuild.md). Bản tùy chỉnh chưa có gói phát hành cài sẵn trên trang Releases.
 
 1. Cài công cụ biên dịch và thư viện:
 
@@ -91,7 +93,7 @@ Xournal++ Mobile là **dự án riêng**, không phải bản desktop trong kho 
    ctest --test-dir build --output-on-failure
    ```
 
-Chỉ bộ công cụ OCR công thức từ ảnh scan cần thiết lập bổ sung; xem [hướng dẫn OCR](https://github.com/lorizenn-2710/xournalpp/blob/feature/protractor-geometry-tools/docs/teaching-tools/PDF-CONG-THUC-SETUP.md). Các bước cài/kiểm thử độc lập của dự án gốc có trong [Compile.md](readme/Compile.md).
+Để nhận dạng công thức từ ảnh scan, cần cài thêm runtime và model theo [hướng dẫn OCR](https://github.com/lorizenn-2710/xournalpp/blob/feature/protractor-geometry-tools/docs/teaching-tools/PDF-CONG-THUC-SETUP.md). Plugin Lua và cấu hình thanh công cụ VK640 đang được dùng trên máy phát triển **chưa nằm trong repository**; build từ Git chưa tái tạo được các phím/nút của plugin đó. Các bước cài/kiểm thử độc lập của dự án gốc có trong [Compile.md](readme/Compile.md).
 
 ## Tài liệu và đóng góp
 
