@@ -93,7 +93,7 @@ Xournal++ Mobile là **dự án riêng**, không phải bản desktop trong kho 
    ctest --test-dir build --output-on-failure
    ```
 
-Để nhận dạng công thức từ ảnh scan, cần cài thêm runtime và model theo [hướng dẫn OCR](https://github.com/lorizenn-2710/xournalpp/blob/feature/protractor-geometry-tools/docs/teaching-tools/PDF-CONG-THUC-SETUP.md). Plugin Lua và cấu hình thanh công cụ VK640 đang được dùng trên máy phát triển **chưa nằm trong repository**; build từ Git chưa tái tạo được các phím/nút của plugin đó. Các bước cài/kiểm thử độc lập của dự án gốc có trong [Compile.md](readme/Compile.md).
+Để nhận dạng công thức từ ảnh scan, cần cài thêm runtime và model theo [hướng dẫn OCR](https://github.com/lorizenn-2710/xournalpp/blob/feature/protractor-geometry-tools/docs/teaching-tools/PDF-CONG-THUC-SETUP.md). Mã plugin Lua VK640 hiện được cài cùng ứng dụng từ nhánh tùy chỉnh. Plugin cài chung được để **tắt mặc định** để tránh nạp trùng với bản cá nhân; trên máy mới, bật một bản VK640 trong phần quản lý plugin của Xournal++. Bố cục thanh công cụ và các thiết lập cá nhân trên máy phát triển chưa được đóng gói, nên bản cài mới có thể trông khác. Các bước cài/kiểm thử độc lập của dự án gốc có trong [Compile.md](readme/Compile.md).
 
 ## Tài liệu và đóng góp
 

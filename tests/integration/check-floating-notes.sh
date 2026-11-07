@@ -7,7 +7,7 @@ export FLOATING_NOTES_OUT=${FLOATING_NOTES_OUT:-$ROOT/output/floating-notes-nati
 mkdir -p "$FLOATING_NOTES_OUT" "$D/config/xournalpp/plugins/Probe" "$D/data" "$D/run" "$D/cache"
 chmod 700 "$D/run"
 cp "$HOME/.config/xournalpp/"{settings.xml,toolbar.ini} "$D/config/xournalpp/"
-cp -a "$HOME/.config/xournalpp/plugins/VK640ToolCycle" "$D/config/xournalpp/plugins/"
+cp -a "$ROOT/plugins/VK640ToolCycle" "$D/config/xournalpp/plugins/"
 cp "$ROOT/tests/integration/floating-notes-probe.lua" "$D/config/xournalpp/plugins/Probe/main.lua"
 cat > "$D/config/xournalpp/plugins/Probe/plugin.ini" <<'INI'
 [about]

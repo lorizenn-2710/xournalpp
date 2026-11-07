@@ -1,6 +1,6 @@
 # Bộ công cụ VK640 cho Toán/Lý THPT
 
-Bản custom tại `/home/phuc/.local/bin/xournalpp`. Đóng và mở lại bản này sau khi cài để nạp mã mới và plugin Lua. Bấm **Ctrl+`** để hiện/ẩn chữ phím tắt dưới các nút bên trái và nhóm PDF/giấy nháp trên cùng. Nút hình bàn phím cạnh nhóm chia trang có cùng tác dụng. **Alt+`** đổi bố cục 1/2 cột. **F1** vẫn mở bảng hướng dẫn đầy đủ.
+Bản custom tại `/home/phuc/.local/bin/xournalpp`. Mã plugin Lua VK640 nằm trong `plugins/VK640ToolCycle/` và được cài vào thư mục plugin dùng chung của prefix khi chạy `cmake --install build`; bản cài chung tắt mặc định để không nạp trùng bản trong cấu hình cá nhân. Trên máy mới, bật **một** bản VK640 trong phần quản lý plugin. Đóng và mở lại app sau khi cài để nạp mã mới. Bấm **Ctrl+`** để hiện/ẩn chữ phím tắt dưới các nút bên trái và nhóm PDF/giấy nháp trên cùng. Nút hình bàn phím cạnh nhóm chia trang có cùng tác dụng. **Alt+`** đổi bố cục 1/2 cột. **F1** vẫn mở bảng hướng dẫn đầy đủ.
 
 ## Vẽ hình
 

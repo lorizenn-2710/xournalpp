@@ -1,6 +1,6 @@
 --[[
- Kiểm thử logic plugin VK640 (không cần chạy app), đối chiếu với nguồn ĐÚNG:
-   /home/phuc/.config/xournalpp/plugins/VK640ToolCycle/main.lua
+ Kiểm thử logic plugin VK640 (không cần chạy app), đối chiếu với nguồn trong repo:
+   plugins/VK640ToolCycle/main.lua
 
  Nội dung:
  * 22 mục registerUi — callback + accelerator (mục menu-only thì KHÔNG có phím tắt)
@@ -24,8 +24,8 @@
 ]]
 
 local PLUGIN = os.getenv("VK640_PLUGIN")
- or "/home/phuc/.config/xournalpp/plugins/VK640ToolCycle/main.lua"
-local SRC_DIR = os.getenv("VK640_SRC") or "/home/phuc/xpp-src"
+ or "plugins/VK640ToolCycle/main.lua"
+local SRC_DIR = os.getenv("VK640_SRC") or "."
 
 local pass, fail = 0, 0
 local function check(cond, name, extra)

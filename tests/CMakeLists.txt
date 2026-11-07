@@ -23,9 +23,9 @@ foreach(ORACLE_SOURCE ${ORACLE_TEST_SOURCES})
     )
 endforeach()
 
-# Include the local VK640 plugin contract when the teaching plugin is installed.
+# Test the bundled teaching plugin, independently of a user's local configuration.
 find_program(VK640_LUA_EXECUTABLE NAMES lua lua5.4 lua5.3 texlua)
-set(VK640_PLUGIN_PATH "$ENV{HOME}/.config/xournalpp/plugins/VK640ToolCycle/main.lua")
+set(VK640_PLUGIN_PATH "${PROJECT_SOURCE_DIR}/plugins/VK640ToolCycle/main.lua")
 if(VK640_LUA_EXECUTABLE AND EXISTS "${VK640_PLUGIN_PATH}")
     add_test(NAME test-vk640-erase
         COMMAND ${CMAKE_COMMAND} -E env

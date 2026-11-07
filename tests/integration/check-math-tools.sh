@@ -3,7 +3,7 @@
 set -euo pipefail
 HERE=$(cd "$(dirname "$0")" && pwd)
 APP=${APP:-/home/phuc/.local/bin/xournalpp}
-export VK640_PLUGIN=${VK640_PLUGIN:-$HOME/.config/xournalpp/plugins/VK640ToolCycle/main.lua}
+export VK640_PLUGIN=${VK640_PLUGIN:-$HERE/../../plugins/VK640ToolCycle/main.lua}
 D=$(mktemp -d /tmp/xpp-math-tools.XXXXXX)
 export MATH_TEST_DIR=$D MATH_TEST_SCRIPTS=$HERE APP
 mkdir -p "$D/config/xournalpp/plugins/MathProbe" "$D/data" "$D/run"

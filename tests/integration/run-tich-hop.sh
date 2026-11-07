@@ -11,6 +11,7 @@
 set -u
 D=/tmp/xpp-kt2
 S=$(cd "$(dirname "$0")" && pwd)
+VK_DIR="$S/../../plugins/VK640ToolCycle"
 APP=$HOME/.local/bin/xournalpp
 
 if [ ! -x "$APP" ]; then echo "LỖI: không thấy $APP"; exit 1; fi
@@ -20,7 +21,7 @@ rm -rf "$D"
 mkdir -p "$D/xournalpp/plugins"
 cp -r "$S/EraseProbe" "$D/xournalpp/plugins/"
 # Plugin THẬT của Phúc cũng được nạp vào instance này (phần C gọi thẳng callback của nó).
-cp -r "$HOME/.config/xournalpp/plugins/VK640ToolCycle" "$D/xournalpp/plugins/"
+cp -r "$VK_DIR" "$D/xournalpp/plugins/"
 cp "$HOME/.config/xournalpp/settings.xml" "$D/xournalpp/settings.xml"
 python3 - "$D/xournalpp/settings.xml" "$D" <<'PY'
 import re, sys
@@ -37,7 +38,7 @@ print("pluginEnabled ->", d + "/xournalpp/plugins/{EraseProbe,VK640ToolCycle}")
 PY
 
 # --- số hiệu action của plugin thật, tính TỪ NGUỒN (không chép tay, tự đúng khi ai thêm bớt) ---
-VK=$HOME/.config/xournalpp/plugins/VK640ToolCycle/main.lua
+VK="$VK_DIR/main.lua"
 IDX_SEL2IMG=$(python3 "$S/idx-action.py" "$S/EraseProbe/main.lua" "$VK" sel2img)
 IDX_NOTEPAGES=$(python3 "$S/idx-action.py" "$S/EraseProbe/main.lua" "$VK" notepages)
 export IDX_SEL2IMG IDX_NOTEPAGES

@@ -2,12 +2,13 @@
 # Real Ctrl+` keyboard events against the production plugin in an isolated X11 app.
 set -euo pipefail
 HERE=$(cd "$(dirname "$0")" && pwd)
+VK640_DIR="$HERE/../../plugins/VK640ToolCycle"
 D=$(mktemp -d /tmp/xpp-shortcut-hints.XXXXXX)
 export HINT_TEST_DIR=$D HINT_TEST_SCRIPTS=$HERE
 export APP=${APP:-/home/phuc/.local/bin/xournalpp}
 # The probe is appended after the production registrations. Derive its index
 # from the actual plugin, so adding native notebook actions cannot retarget it.
-HINT_SNAPSHOT_INDEX=$(python3 - "$HOME/.config/xournalpp/plugins/VK640ToolCycle/main.lua" <<'PYINDEX'
+HINT_SNAPSHOT_INDEX=$(python3 - "$VK640_DIR/main.lua" <<'PYINDEX'
 import re,sys
 print(len(re.findall(r"app\.registerUi\s*\{",open(sys.argv[1],encoding="utf-8").read())))
 PYINDEX
@@ -16,7 +17,7 @@ export HINT_SNAPSHOT_ACTION="plugins.action-$HINT_SNAPSHOT_INDEX"
 mkdir -p "$D/config/xournalpp/plugins/VK640ToolCycle" "$D/data" "$D/run"
 chmod 700 "$D/run"
 cp "$HOME/.config/xournalpp/settings.xml" "$HOME/.config/xournalpp/toolbar.ini" "$D/config/xournalpp/"
-cp "$HOME/.config/xournalpp/plugins/VK640ToolCycle/"{main.lua,plugin.ini} "$D/config/xournalpp/plugins/VK640ToolCycle/"
+cp "$VK640_DIR/"{main.lua,plugin.ini} "$D/config/xournalpp/plugins/VK640ToolCycle/"
 cat >> "$D/config/xournalpp/plugins/VK640ToolCycle/main.lua" <<'LUA'
 local productionInit = initUi
 function hintSnapshot()
@@ -111,6 +112,7 @@ import pathlib,re,sys
 import numpy as np
 from PIL import Image
 root=pathlib.Path(sys.argv[1]); log=(root/'app.log').read_text()
+assert log.count('Plugin "VK640ToolCycle" UI initialized') == 1, 'VK640 plugin loaded more than once'
 states=re.findall(r'HINT_STATE columns=(\d+) pages=(\d+)',log)
 assert len(states)==5, (states,log)
 assert states[0]==states[1]==states[2], 'Ctrl+grave changed layout/pages'
