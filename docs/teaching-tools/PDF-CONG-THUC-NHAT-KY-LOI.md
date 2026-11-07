@@ -172,3 +172,15 @@ Ngày 03/11/2026. Mỗi trạng thái “đã sửa/đã kiểm chứng” dư�
 - **Trạng thái:** **đã sửa, kiểm chứng test race và GUI đầy đủ**: `final/9.log`, `final/10.log`, `small-screen.log`, `final/9-portable-release.log` đều PASS sau mutex.
 - **Cách sửa:** mutex nguồn riêng mỗi TexImage, khóa suốt render và khi đo/thay nguồn/clone; clone load PDF độc lập. Đồng thời nhả ref page sau đo, GBytes giữ byte PDF độc lập khi preview tham chiếu vượt lifetime đối tượng. Không đổi định dạng file.
 - **Test/bằng chứng:** `concurrent-before.log` SIGSEGV trước sửa; `concurrent-after.log` thoát bình thường; `concurrent-stress.json` 20/20 lượt, tổng 8.000 render bốn luồng; kiểm clone và retained-PDF lifetime. Test được thêm CTest. Kiểm GUI/export/undo bằng `final/9.log`, `final/10.log`; không xóa log crash cũ.
+
+## PDF-018 — Hai cảnh báo OCR cùng lúc chỉ hiện một
+
+- **Tái hiện:** vùng ảnh có chữ chạm mép và năm dòng tách biệt, tạo hơn 12 cách đọc. Worker trả đủ 12 ứng viên nhưng cảnh báo chạm mép ghi đè cảnh báo còn ứng viên bị cắt.
+- **Cách sửa:** ghép cả hai cảnh báo vào một giá trị `notes` trên một dòng để giao thức INI và giao diện đọc được đầy đủ.
+- **Kiểm chứng:** `tests/integration/check-formula-ocr-warnings.py` chạy worker với backend giả lập chỉ để kiểm luồng crop/chia dòng/giới hạn và hai cảnh báo; không dùng làm phép đo độ chính xác của model.
+
+## PDF-019 — Dán ngay sau khi sao chép có thể không tạo phần tử
+
+- **Tái hiện:** một lượt GUI PDF đã lưu được cụm TexImage sau redo nhưng file sau `select-all` → `copy` → `paste` vẫn chỉ có một TexImage. Lượt chạy lại đạt, cho thấy lỗi phụ thuộc thứ tự callback.
+- **Nguyên nhân trong mã:** `ClipboardHandler::paste` yêu cầu danh sách định dạng clipboard bất đồng bộ nhưng chọn định dạng ngay bằng các cờ cập nhật từ callback trước đó.
+- **Cách sửa:** chọn định dạng trong callback của chính yêu cầu hiện tại, giữ guard vòng đời và trang/lớp đích cho cả hai callback. Bài GUI gọi `copy` rồi `paste` ngay và so nguồn TeX/PDF trong file lưu.

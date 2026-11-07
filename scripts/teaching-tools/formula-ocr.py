@@ -73,8 +73,10 @@ def main():
                             out[f'candidate{count}']={'raw64':base64.b64encode(raw.encode()).decode(),'line':str(line),'rotation':str(rotation),'scale':str(factor)}
                             count+=1
                         else:truncated=True
-        if truncated:out['result']['notes']='Có hơn 12 cách đọc; chọn vùng nhỏ hơn để xem đủ ứng viên.'
-        if clipped:out['result']['notes']='Chữ chạm mép vùng: có thể bị cắt mất số mũ, căn hoặc mẫu số. Nên chọn lại vùng rộng hơn.'
+        notes=[]
+        if truncated:notes.append('Có hơn 12 cách đọc; chọn vùng nhỏ hơn để xem đủ ứng viên.')
+        if clipped:notes.append('Chữ chạm mép vùng: có thể bị cắt mất số mũ, căn hoặc mẫu số. Nên chọn lại vùng rộng hơn.')
+        if notes:out['result']['notes']=' '.join(notes)
         out['result'].update(code='ok', count=str(count), seconds=f'{time.monotonic()-start:.4f}')
     except ImportError:
         out['result'].update(code='missing-backend',message='Thiếu runtime OCR. Chạy scripts/teaching-tools/setup-formula-ocr.sh trong mã nguồn.')

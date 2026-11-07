@@ -37,8 +37,8 @@ def click(o):
   if a.getName(i) in ('click','press','activate'):assert a.doAction(i);time.sleep(.25);return
  raise AssertionError('No click '+o.name)
 def edit(name,text): assert find(name,'text').queryEditableText().setTextContents(text);time.sleep(.25)
-def native_action(name):
- subprocess.run(['gdbus','call','--session','--dest',os.environ['PDF_FORMULA_BUS'],'--object-path','/com/github/xournalpp/xournalpp/window/1','--method','org.gtk.Actions.Activate',name,'[]','{}'],check=True,stdout=subprocess.DEVNULL);time.sleep(.4)
+def native_action(name,wait=.4):
+ subprocess.run(['gdbus','call','--session','--dest',os.environ['PDF_FORMULA_BUS'],'--object-path','/com/github/xournalpp/xournalpp/window/1','--method','org.gtk.Actions.Activate',name,'[]','{}'],check=True,stdout=subprocess.DEVNULL);time.sleep(wait)
 def keys(*names):
  d=display.Display();codes=[d.keysym_to_keycode(XK.string_to_keysym(n)) for n in names]
  for c in codes:xtest.fake_input(d,X.KeyPress,c)
@@ -150,7 +150,7 @@ native_action('redo');save(artifacts/'text-redo.xopp')
 a=ET.fromstring(gzip.open(artifacts/'text-redo.xopp','rb').read());assert a.findall('.//teximage') and a.findall('.//stroke'),'redo did not restore formula and graph'
 print('PDF_GUI PASS text/select/recognize/edit/review/cancel/insert/one-undo-redo',flush=True)
 # Native clipboard serialization includes TexImage and its source/PDF.
-native_action('select-all');native_action('copy');native_action('paste');save(artifacts/'copy-paste.xopp')
+native_action('select-all');native_action('copy',wait=0);native_action('paste');save(artifacts/'copy-paste.xopp')
 copied=ET.fromstring(gzip.open(artifacts/'copy-paste.xopp','rb').read());tex=copied.findall('.//teximage')
 assert len(tex)==2 and tex[0].text==tex[1].text and tex[0].get('text')==tex[1].get('text'),'clipboard lost formula data/source'
 native_action('undo')

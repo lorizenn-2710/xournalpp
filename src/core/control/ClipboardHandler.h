@@ -57,6 +57,8 @@ private:
     void clipboardUpdated(GdkAtom atom);
     static void receivedClipboardContents(GtkClipboard* clipboard, GtkSelectionData* selectionData,
                                           Request* request);
+    static void pasteClipboardTargets(GtkClipboard* clipboard, GtkSelectionData* selectionData,
+                                      Request* request);
 
     static void pasteClipboardContents(GtkClipboard* clipboard, GtkSelectionData* selectionData,
                                        Request* request);
