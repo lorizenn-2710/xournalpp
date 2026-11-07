@@ -5,6 +5,7 @@
 > This is a fork of [the official Xournal++ repository](https://github.com/xournalpp/xournalpp).
 > For installation of the official releases, use the instructions below. For the
 > teaching tools in this fork, see the [Vietnamese guide](README.vi.md#cài-bản-tùy-chỉnh-từ-mã-nguồn).
+> This fork does not currently provide a tested Windows or Linux installer containing every custom feature.
 
 
 [![Build Status](https://dev.azure.com/xournalpp/xournalpp/_apis/build/status/CI?branchName=master)](https://dev.azure.com/xournalpp/xournalpp/_build/latest?definitionId=1&branchName=master)
