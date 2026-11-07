@@ -1,5 +1,11 @@
 # <img src="ui/pixmaps/com.github.xournalpp.xournalpp.svg" align="left" width="100" height="100">  <br> Xournal++
 
+**Ngôn ngữ:** [Tiếng Việt](README.vi.md) · English
+
+> This is a fork of [the official Xournal++ repository](https://github.com/xournalpp/xournalpp).
+> For installation of the official releases, use the instructions below. For the
+> teaching tools in this fork, see the [Vietnamese guide](README.vi.md#cài-bản-tùy-chỉnh-từ-mã-nguồn).
+
 
 [![Build Status](https://dev.azure.com/xournalpp/xournalpp/_apis/build/status/CI?branchName=master)](https://dev.azure.com/xournalpp/xournalpp/_build/latest?definitionId=1&branchName=master)
 
