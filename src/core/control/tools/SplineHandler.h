@@ -96,6 +96,8 @@ public:
 
     Range computeLastSegmentRepaintRange() const;
 
+    std::optional<Point> getSnapAnchor() const { return this->snappingHandler.getLatchedAnchor(); }
+
 private:
     void addKnot(const Point& p);
     void addKnotWithTangent(const Point& p, const Point& t);

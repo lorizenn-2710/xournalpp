@@ -18,6 +18,7 @@
 #include "gui/inputdevices/InputEvents.h"       // for InputDeviceClass, INP...
 
 class Control;
+class XournalView;
 
 class XournalppCursor {
 public:
@@ -68,6 +69,7 @@ private:
     bool drawDirCtrl = false;
 
     // avoid re-assigning same cursor
+    XournalView* cursorView = nullptr;
     guint currentCursor = 0;        // enum AVAILABLECURSORS
     gulong currentCursorFlavour{};  // for different flavours of a cursor (i.e. drawdir, pen and highlighter custom
                                     // cursors)

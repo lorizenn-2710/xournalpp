@@ -195,13 +195,13 @@ void Plugin::registerToolButton(ToolMenuHandler* toolMenuHandler) {
 void Plugin::executeToolbarButton(ToolbarButtonEntry* entry) { callFunction(entry->callback, entry->mode); }
 
 void Plugin::registerToolButton(std::string description, std::string toolbarId, std::string iconName,
-                                std::string callback, ptrdiff_t mode) {
+                                std::string callback, ptrdiff_t mode, std::string accelerator) {
     if (toolbarId == "") {
         return;
     }
     toolbarId = "Plugin::" + toolbarId;  // In order to avoid name collisions with built in toolbar id's.
     toolbarButtonEntries.emplace_back(this, std::move(description), std::move(toolbarId), std::move(iconName),
-                                      std::move(callback), mode);
+                                      std::move(callback), mode, std::move(accelerator));
 }
 
 auto Plugin::getControl() const -> Control* { return control; }
@@ -310,7 +310,8 @@ void Plugin::loadScript() {
         XojMsgBox::showPluginMessage(name, errMsg, true);
 
         // Error out if file can't be read
-        g_warning("Could not load plugin Lua file. Error: \"%s\", error code: %d (syntax error: %s)", errMsg, status, status == LUA_ERRSYNTAX ? "true" : "false");
+        g_warning("Could not load plugin Lua file. Error: \"%s\", error code: %d (syntax error: %s)", errMsg, status,
+                  status == LUA_ERRSYNTAX ? "true" : "false");
         this->valid = false;
         return;
     }

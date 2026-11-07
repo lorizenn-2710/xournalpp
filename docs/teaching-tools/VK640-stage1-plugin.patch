@@ -1,0 +1,27 @@
+--- /home/phuc/.config/xournalpp/plugins/VK640ToolCycle/main.lua.before-stage1
++++ /home/phuc/.config/xournalpp/plugins/VK640ToolCycle/main.lua
+@@ -801,6 +801,10 @@
+ -- đăng ký
+ -- ---------------------------------------------------------------------------
+
++function vk640MathTools()
++    app.showMathTools()
++end
++
+ function initUi()
+     -- Tab trần (giữ theo yêu cầu); Ctrl+Tab là bản CÓ MODIFIER vì nhóm phím
+     -- có Ctrl/Shift chạy ổn định hơn hẳn Tab trần trên máy này; F8 là dự phòng.
+@@ -931,4 +935,12 @@
+         toolbarId = "SHORTCUT_HINTS",
+         iconName = "input-keyboard",
+     }
+-end
++    app.registerUi{
++        menu = "Toán: đồ thị, tiếp tuyến, bảng biến thiên",
++        callback = "vk640MathTools",
++        toolbarId = "MATH_TOOLS",
++        iconName = "accessories-calculator",
++        accelerator = "<Alt>g",
++    }
++
++end

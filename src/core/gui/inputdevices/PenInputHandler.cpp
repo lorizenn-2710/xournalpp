@@ -6,7 +6,6 @@
 
 #include <algorithm>  // for max, min
 #include <cmath>      // for abs, atan, sqrt
-#include <thread>     // for thread
 #include <utility>    // for move
 
 #include <glib.h>     // for gdouble, gint, g_message
@@ -40,7 +39,12 @@
 
 PenInputHandler::PenInputHandler(InputContext* inputContext): AbstractInputHandler(inputContext) {}
 
-PenInputHandler::~PenInputHandler() = default;
+PenInputHandler::~PenInputHandler() { stopDeferredScrolling(); }
+void PenInputHandler::stopDeferredScrolling() {
+    if (scrollIdleSource) { g_source_remove(scrollIdleSource); scrollIdleSource = 0; }
+    if (outsideScrollSource) { g_source_remove(outsideScrollSource); outsideScrollSource = 0; }
+    scrollOffsetVector = {0., 0.};
+}
 
 void PenInputHandler::updateLastEvent(InputEvent const& event) {
     if (!event) {
@@ -67,13 +71,14 @@ void PenInputHandler::handleScrollEvent(InputEvent const& event) {
     if (this->scrollOffsetVector == xoj::util::Point<double>(0., 0.)) {
         this->scrollOffsetVector = this->scrollStartPosition - event.absolute;
 
-        Util::execInUiThread([&]() {
-            this->inputContext->getXournal()->layout->scrollRelative(this->scrollOffsetVector.x,
-                                                                     this->scrollOffsetVector.y);
-
-            // Scrolling done, so reset our counters
-            this->scrollOffsetVector = xoj::util::Point<double>(0., 0.);
-        });
+        scrollIdleSource = g_idle_add(+[](gpointer data) -> gboolean {
+            auto* self = static_cast<PenInputHandler*>(data);
+            self->scrollIdleSource = 0;
+            self->inputContext->getXournal()->layout->scrollRelative(self->scrollOffsetVector.x,
+                                                                    self->scrollOffsetVector.y);
+            self->scrollOffsetVector = {0., 0.};
+            return G_SOURCE_REMOVE;
+        }, this);
 
         // Update the reference for the scroll-offset
         this->scrollStartPosition = event.absolute;
@@ -184,6 +189,13 @@ auto PenInputHandler::actionStart(InputEvent const& event) -> bool {
     }
 
     return true;
+}
+
+void PenInputHandler::finishSequence() {
+    stopDeferredScrolling();
+    if (inputRunning) actionEnd(lastEvent);
+    deviceClassPressed = false;
+    modifier2 = modifier3 = modifier4 = modifier5 = false;
 }
 
 double PenInputHandler::inferPressureValue(PositionInputData const& pos, XojPageView* page) {
@@ -548,44 +560,24 @@ void PenInputHandler::actionLeaveWindow(InputEvent const& event) {
         gint width = gtk_widget_get_allocated_width(widget);
         gint height = gtk_widget_get_allocated_height(widget);
 
-        new std::thread([&, eventX, eventY, width, height]() {
-            int offsetX = 0, offsetY = 0;
-
-            // TODO(fabian): make offset dependent on how big the distance between pen and view is
-            if (eventX < WIDGET_SCROLL_BORDER) {
-                offsetX = -10;
-            }
-
-            if (eventY < WIDGET_SCROLL_BORDER) {
-                offsetY = -10;
-            }
-
-            if (eventX > width - WIDGET_SCROLL_BORDER) {
-                offsetX = 10;
-            }
-
-            if (eventY > height - WIDGET_SCROLL_BORDER) {
-                offsetY = 10;
-            }
-
-#ifdef DEBUG_INPUT
-            g_message("Offset: X:%d\tY:%d", offsetX, offsetY);
-#endif
-
-            while (!this->penInWidget) {
-                Util::execInUiThread([&]() {
-                    GtkXournal* xournal = this->inputContext->getXournal();
-                    xournal->layout->scrollRelative(offsetX, offsetY);
-                });
-
-                // sleep for half a second until we scroll again
-                g_usleep(static_cast<gulong>(0.5 * G_USEC_PER_SEC));
-            }
-        });
+        outsideScrollOffset = {eventX < WIDGET_SCROLL_BORDER ? -10. : eventX > width - WIDGET_SCROLL_BORDER ? 10. : 0.,
+                               eventY < WIDGET_SCROLL_BORDER ? -10. : eventY > height - WIDGET_SCROLL_BORDER ? 10. : 0.};
+        if (!outsideScrollSource)
+            outsideScrollSource = g_timeout_add(500, +[](gpointer data) -> gboolean {
+                auto* self = static_cast<PenInputHandler*>(data);
+                if (self->penInWidget || !self->deviceClassPressed) {
+                    self->outsideScrollSource = 0;
+                    return G_SOURCE_REMOVE;
+                }
+                self->inputContext->getXournal()->layout->scrollRelative(self->outsideScrollOffset.x,
+                                                                        self->outsideScrollOffset.y);
+                return G_SOURCE_CONTINUE;
+            }, this);
     }
 }
 
 void PenInputHandler::actionEnterWindow(InputEvent const& event) {
+    if (outsideScrollSource) { g_source_remove(outsideScrollSource); outsideScrollSource = 0; }
     this->penInWidget = true;
 
     if (!this->inputContext->getSettings()->getInputSystemDrawOutsideWindowEnabled()) {

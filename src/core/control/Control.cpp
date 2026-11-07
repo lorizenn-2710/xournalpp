@@ -42,6 +42,7 @@
 #include "control/xojfile/SaveHandler.h"
 #include "control/zoom/ZoomControl.h"                            // for Zoom...
 #include "gui/FloatingToolbox.h"                                 // for Floa...
+#include "gui/FloatingNotes.h"
 #include "gui/MainWindow.h"                                      // for Main...
 #include "gui/PageView.h"                                        // for XojP...
 #include "gui/PdfFloatingToolbox.h"                              // for PdfF...
@@ -337,6 +338,7 @@ auto Control::autosaveCallback(Control* control) -> bool {
         return true;
     }
 
+    if (control->win && control->win->getFloatingNotes()) control->win->getFloatingNotes()->prepareSave();
     auto* job = new AutosaveJob(control);
     control->scheduler->addJob(job, JOB_PRIORITY_NONE);
     job->unref();
@@ -448,24 +450,30 @@ void Control::showFloatingToolbox(int x, int y) {
 }
 
 auto Control::copy() -> bool {
-    if (this->win && this->win->getXournal()->copy()) {
+    if (this->win && this->getEditingView()->copy()) {
         return true;
     }
     return this->clipboardHandler->copy();
 }
 
 auto Control::cut() -> bool {
-    if (this->win && this->win->getXournal()->cut()) {
+    if (this->win && this->getEditingView()->cut()) {
         return true;
     }
     return this->clipboardHandler->cut();
 }
 
 auto Control::paste() -> bool {
-    if (this->win && this->win->getXournal()->paste()) {
+    if (this->win && this->getEditingView()->paste()) {
         return true;
     }
-    return this->clipboardHandler->paste();
+    auto page = getEditingPage();
+    auto* layer = page ? page->getSelectedLayer() : nullptr;
+    const auto generation = editingGeneration;
+    return this->clipboardHandler->paste([this,page,layer,generation] {
+        return generation == editingGeneration && page && getEditingPage() == page &&
+               page->getSelectedLayer() == layer && (!page->floatingNote || !page->floatingNote->deleted);
+    });
 }
 
 void Control::selectAlpha(OpacityFeature feature) {
@@ -509,28 +517,29 @@ void Control::selectAlpha(OpacityFeature feature) {
 }
 
 void Control::clearSelectionEndText() {
+    if (win && win->getFloatingNotes()) win->getFloatingNotes()->flush();
     clearSelection();
     if (win) {
-        win->getXournal()->endTextAllPages();
+        getEditingView()->endTextAllPages();
     }
 }
 
 void Control::selectAllOnPage() {
-    auto pageNr = getCurrentPageNo();
+    auto pageNr = getEditingView()->getCurrentPage();
     if (pageNr == npos) {
         return;
     }
 
-    win->getXournal()->clearSelection();
+    getEditingView()->clearSelection();
 
     this->doc->lock();
-    XojPageView* view = win->getXournal()->getViewFor(pageNr);
+    XojPageView* view = getEditingView()->getViewFor(pageNr);
     if (view == nullptr) {
         this->doc->unlock();
         return;
     }
 
-    PageRef page = this->doc->getPage(pageNr);
+    PageRef page = getEditingView()->getViewFor(pageNr)->getPage();
     Layer* layer = page->getSelectedLayer();
 
     auto elements = layer->clearNoFree();
@@ -548,12 +557,12 @@ void Control::selectAllOnPage() {
 
         page->fireRangeChanged(rg);
 
-        win->getXournal()->setSelection(sel.release());
+        getEditingView()->setSelection(sel.release());
     }
 }
 
 void Control::reorderSelection(EditSelection::OrderChange change) {
-    EditSelection* sel = win->getXournal()->getSelection();
+    EditSelection* sel = getEditingView()->getSelection();
     if (!sel) {
         return;
     }
@@ -1135,6 +1144,20 @@ auto Control::searchTextOnPage(const std::string& text, size_t pageNumber, size_
     return getWindow()->getXournal()->searchTextOnPage(text, pageNumber, index, occurrences, matchRect);
 }
 
+XournalView* Control::getEditingView() const {
+    if (!win) return nullptr;
+    auto* notes = win->getFloatingNotes();
+    return notes && notes->getActiveView() ? notes->getActiveView() : win->getXournal();
+}
+PageRef Control::getEditingPage() const {
+    auto* v = getEditingView();
+    auto* p = v ? v->getViewFor(v->getCurrentPage()) : nullptr;
+    return p ? p->getPage() : PageRef{};
+}
+void Control::activateEditingView(XournalView* view) {
+    if (win && win->getFloatingNotes()) win->getFloatingNotes()->activate(view);
+}
+
 auto Control::getCurrentPage() -> PageRef {
     this->doc->lock_shared();
     PageRef p = this->doc->getPage(getCurrentPageNo());
@@ -1154,6 +1177,7 @@ void Control::undoRedoChanged() {
 }
 
 void Control::undoRedoPageChanged(PageRef page) {
+    if (win && win->getFloatingNotes() && page && page->floatingNote) win->getFloatingNotes()->changed(page);
     if (std::find(begin(this->changedPages), end(this->changedPages), page) == end(this->changedPages)) {
         this->changedPages.emplace_back(std::move(page));
     }
@@ -1163,12 +1187,12 @@ void Control::selectTool(ToolType type) {
     // keep text-selection when switching from text to seletion tool
     auto oldTool = getToolHandler()->getActiveTool();
     if (oldTool && win && isSelectToolType(type) && oldTool->getToolType() == ToolType::TOOL_TEXT &&
-        this->win->getXournal()->getTextEditor() && !(this->win->getXournal()->getTextEditor()->bufferEmpty())) {
-        auto xournal = this->win->getXournal();
+        this->getEditingView()->getTextEditor() && !(this->getEditingView()->getTextEditor()->bufferEmpty())) {
+        auto xournal = this->getEditingView();
         Text* textobj = xournal->getTextEditor()->getTextElement();
         clearSelectionEndText();
 
-        auto pageNr = getCurrentPageNo();
+        auto pageNr = getEditingView()->getCurrentPage();
         XojPageView* view = xournal->getViewFor(pageNr);
         xoj_assert(view != nullptr);
         PageRef page = view->getPage();
@@ -1195,16 +1219,20 @@ void Control::toolChanged() {
 
     this->actionDB->setActionState(Action::SELECT_TOOL, type);
 
-    this->actionDB->enableAction(Action::TOOL_DRAW_LINE, toolHandler->hasCapability(TOOL_CAP_RULER));
-    this->actionDB->enableAction(Action::TOOL_DRAW_RECTANGLE, toolHandler->hasCapability(TOOL_CAP_RECTANGLE));
-    this->actionDB->enableAction(Action::TOOL_DRAW_ELLIPSE, toolHandler->hasCapability(TOOL_CAP_ELLIPSE));
-    this->actionDB->enableAction(Action::TOOL_DRAW_ARROW, toolHandler->hasCapability(TOOL_CAP_ARROW));
-    this->actionDB->enableAction(Action::TOOL_DRAW_DOUBLE_ARROW, toolHandler->hasCapability(TOOL_CAP_DOUBLE_ARROW));
-    this->actionDB->enableAction(Action::TOOL_DRAW_COORDINATE_SYSTEM, toolHandler->hasCapability(TOOL_CAP_ARROW));
-    this->actionDB->enableAction(Action::TOOL_DRAW_SPLINE, toolHandler->hasCapability(TOOL_CAP_SPLINE));
-    this->actionDB->enableAction(Action::TOOL_DRAW_SHAPE_RECOGNIZER, toolHandler->hasCapability(TOOL_CAP_RECOGNIZER));
+    this->actionDB->enableAction(Action::TOOL_DRAW_LINE, true);
+    this->actionDB->enableAction(Action::TOOL_DRAW_RECTANGLE, true);
+    this->actionDB->enableAction(Action::TOOL_DRAW_ELLIPSE, true);
+    this->actionDB->enableAction(Action::TOOL_DRAW_ARROW, true);
+    this->actionDB->enableAction(Action::TOOL_DRAW_DOUBLE_ARROW, true);
+    this->actionDB->enableAction(Action::TOOL_DRAW_COORDINATE_SYSTEM, true);
+    this->actionDB->enableAction(Action::TOOL_DRAW_SPLINE, true);
+    this->actionDB->enableAction(Action::TOOL_DRAW_SHAPE_RECOGNIZER, true);
+    this->actionDB->enableAction(Action::TOOL_DRAW_TRIANGLE, true);
+    this->actionDB->enableAction(Action::TOOL_DRAW_BOX, true);
+    this->actionDB->enableAction(Action::TOOL_DRAW_PYRAMID, true);
 
-    DrawingType dt = toolHandler->getDrawingType();
+    const bool canDrawShapes = (type == TOOL_PEN || type == TOOL_HIGHLIGHTER);
+    DrawingType dt = canDrawShapes ? toolHandler->getDrawingType() : DRAWING_TYPE_DEFAULT;
     this->actionDB->setActionState(Action::TOOL_DRAW_LINE, dt == DRAWING_TYPE_LINE);
     this->actionDB->setActionState(Action::TOOL_DRAW_RECTANGLE, dt == DRAWING_TYPE_RECTANGLE);
     this->actionDB->setActionState(Action::TOOL_DRAW_ELLIPSE, dt == DRAWING_TYPE_ELLIPSE);
@@ -1213,6 +1241,9 @@ void Control::toolChanged() {
     this->actionDB->setActionState(Action::TOOL_DRAW_COORDINATE_SYSTEM, dt == DRAWING_TYPE_COORDINATE_SYSTEM);
     this->actionDB->setActionState(Action::TOOL_DRAW_SPLINE, dt == DRAWING_TYPE_SPLINE);
     this->actionDB->setActionState(Action::TOOL_DRAW_SHAPE_RECOGNIZER, dt == DRAWING_TYPE_SHAPE_RECOGNIZER);
+    this->actionDB->setActionState(Action::TOOL_DRAW_TRIANGLE, dt == DRAWING_TYPE_TRIANGLE);
+    this->actionDB->setActionState(Action::TOOL_DRAW_BOX, dt == DRAWING_TYPE_BOX);
+    this->actionDB->setActionState(Action::TOOL_DRAW_PYRAMID, dt == DRAWING_TYPE_PYRAMID);
 
     bool enableSize = toolHandler->hasCapability(TOOL_CAP_SIZE);
     this->actionDB->enableAction(Action::TOOL_SIZE, enableSize);
@@ -1252,17 +1283,17 @@ void Control::toolChanged() {
 
     if (type != TOOL_TEXT) {
         if (win) {
-            win->getXournal()->endTextAllPages();
+            getEditingView()->endTextAllPages();
         }
     }
     if (type != TOOL_LINK) {
         if (win) {
-            win->getXournal()->endLinkAllPages();
+            getEditingView()->endLinkAllPages();
         }
     }
     if (toolHandler->getDrawingType() != DRAWING_TYPE_SPLINE) {
         if (win) {
-            win->getXournal()->endSplineAllPages();
+            getEditingView()->endSplineAllPages();
         }
     }
 }
@@ -1312,7 +1343,7 @@ auto Control::getLineStyleToSelect() -> std::optional<string> const {
         return style;
     }
 
-    const EditSelection* sel = win->getXournal()->getSelection();
+    const EditSelection* sel = getEditingView()->getSelection();
     if (!sel) {
         return style;
     }
@@ -1350,7 +1381,7 @@ void Control::toolColorChanged() {
 
 void Control::changeColorOfSelection() {
     if (this->win && toolHandler->hasCapability(TOOL_CAP_COLOR)) {
-        EditSelection* sel = this->win->getXournal()->getSelection();
+        EditSelection* sel = this->getEditingView()->getSelection();
         if (sel) {
             undoRedo->addUndoAction(sel->setColor(toolHandler->getColor()));
         }
@@ -1844,7 +1875,9 @@ void Control::fileLoaded(int scrollToPage) {
             newMd.page = scrollToPage;
             loadMetadata(newMd);
         }
-        RecentManager::addRecentFileFilename(filepath);
+        if (filepath.filename() != "session.xopp") {
+            RecentManager::addRecentFileFilename(filepath);
+        }
 
         if (settings->getForceZoomToFitOnLoad()) {
             zoom->updateZoomFitValue();
@@ -1856,6 +1889,7 @@ void Control::fileLoaded(int scrollToPage) {
         zoom->setZoomFitMode(true);
     }
 
+    this->sessionSaved = false;
     updateWindowTitle();
     win->getXournal()->forceUpdatePagenumbers();
     getCursor()->updateCursor();
@@ -2004,6 +2038,7 @@ void Control::block(const string& name) {
     // Disable all gui Control, to get full control over the application
     win->setDynamicallyGeneratedSubmenuDisabled(true);
     actionDB->disableAll();
+    if (win->getFloatingNotes()) win->getFloatingNotes()->setSensitive(false);
     getCursor()->setCursorBusy(true);
     disableSidebarTmp(true);
 
@@ -2025,6 +2060,7 @@ void Control::unblock() {
 
     this->win->setDynamicallyGeneratedSubmenuDisabled(false);
     actionDB->resetEnableStatus();
+    if (win->getFloatingNotes()) win->getFloatingNotes()->setSensitive(true);
     getCursor()->setCursorBusy(false);
     disableSidebarTmp(false);
 
@@ -2136,6 +2172,7 @@ void Control::save(std::function<void(bool)> callback) { saveImpl(false, std::mo
 void Control::saveAs(std::function<void(bool)> callback) { saveImpl(true, std::move(callback)); }
 
 void Control::saveImpl(bool saveAs, std::function<void(bool)> callback) {
+    if (win && win->getFloatingNotes()) win->getFloatingNotes()->prepareSave();
     // clear selection before saving
     clearSelectionEndText();
 
@@ -2184,31 +2221,46 @@ void Control::resetSavedStatus() {
     this->updateWindowTitle();
 }
 
-void Control::saveSessionOnQuit() {
-    if (!this->doc) {
-        return;
+bool Control::saveSessionOnQuit(bool fromSignal) {
+    if (!this->doc || this->sessionSaved) {
+        return this->sessionSaved;
     }
 
-    clearSelectionEndText();
+    if (!fromSignal) {
+        clearSelectionEndText();
+    }
 
-    this->doc->lock_shared();
+    if (fromSignal) {
+        if (!this->doc->try_lock_shared()) {
+            return false;
+        }
+    } else {
+        this->doc->lock_shared();
+    }
     fs::path filepath = this->doc->getFilepath();
     fs::path pdfpath = this->doc->getPdfFilepath();
     int pageNo = static_cast<int>(this->getCurrentPageNo());
     double currentZoom = this->zoom ? this->zoom->getZoomReal() : 1.0;
 
+    size_t pageCount = this->doc->getPageCount();
+    size_t pdfPageCount = this->doc->getPdfPageCount();
     bool hasAnnotations = false;
-    for (size_t i = 0; i < this->doc->getPageCount(); ++i) {
+    for (size_t i = 0; i < pageCount; ++i) {
         auto page = this->doc->getPage(i);
         if (page && page->isAnnotated()) {
             hasAnnotations = true;
             break;
         }
     }
+    const bool notebook = !this->doc->floatingNotes.empty();
+    hasAnnotations = hasAnnotations || notebook;
+    const bool externalChange = this->doc->hasExternalModification();
+    const auto recoveryId = this->doc->recoveryId;
     this->doc->unlock_shared();
 
     bool isChanged = this->undoRedo && this->undoRedo->isChanged();
-    auto sessionFile = Util::getConfigFolder() / "session.xopp";
+    bool hasCustomPages = !pdfpath.empty() ? (pageCount > pdfPageCount) : (pageCount > 1);
+    auto sessionFile = Util::getConfigFolder() / (notebook ? "session-" + recoveryId + ".xopp" : "session.xopp");
     auto sessionIni = Util::getConfigFolder() / "session.ini";
 
     auto writeSessionIni = [](const fs::path& iniPath, const fs::path& path, bool isScratchpad, int page, double zoom) {
@@ -2219,12 +2271,25 @@ void Control::saveSessionOnQuit() {
         g_key_file_set_integer(kf, "session", "page", page);
         g_key_file_set_double(kf, "session", "zoom", zoom);
 
-        g_key_file_save_to_file(kf, Util::toGFilename(iniPath).c_str(), nullptr);
+        const bool saved = g_key_file_save_to_file(kf, Util::toGFilename(iniPath).c_str(), nullptr);
         g_key_file_free(kf);
+        return saved;
     };
 
-    if (!filepath.empty()) {
-        if (isChanged) {
+    bool success = false;
+    // A second writer must never be silently overwritten by the quit/session path.
+    if (!filepath.empty() && externalChange && (isChanged || notebook)) {
+        SaveHandler handler;
+        this->doc->lock_shared();
+        handler.prepareSave(this->doc, sessionFile);
+        this->doc->unlock_shared();
+        handler.saveTo(sessionFile, this);
+        if (handler.getErrorMessage().empty()) {
+            success = writeSessionIni(sessionIni, sessionFile, true, pageNo, currentZoom);
+            g_warning("External change: kept this session separately at %s", sessionFile.string().c_str());
+        }
+    } else if (!filepath.empty()) {
+        if (isChanged || notebook) {
             SaveHandler handler;
             this->doc->lock_shared();
             handler.prepareSave(this->doc, filepath);
@@ -2234,17 +2299,20 @@ void Control::saveSessionOnQuit() {
             if (handler.getErrorMessage().empty()) {
                 this->doc->lock();
                 handler.updateDocumentInfo(this->doc);
+                this->doc->setFilepath(filepath);
                 this->doc->unlock();
-                if (this->undoRedo) {
+                if (!fromSignal && this->undoRedo) {
                     this->undoRedo->documentSaved();
                 }
             } else {
+                this->sessionSaved = false;
                 g_warning("Could not auto-save to %s on quit: %s", filepath.string().c_str(),
                           handler.getErrorMessage().c_str());
+                return false;
             }
         }
-        writeSessionIni(sessionIni, filepath, false, pageNo, currentZoom);
-    } else if (hasAnnotations || isChanged) {
+        success = writeSessionIni(sessionIni, filepath, false, pageNo, currentZoom);
+    } else if (hasAnnotations || hasCustomPages || isChanged) {
         SaveHandler handler;
         this->doc->lock_shared();
         handler.prepareSave(this->doc, sessionFile);
@@ -2252,22 +2320,26 @@ void Control::saveSessionOnQuit() {
         handler.saveTo(sessionFile, this);
 
         if (handler.getErrorMessage().empty()) {
-            if (this->undoRedo) {
+            if (!fromSignal && this->undoRedo) {
                 this->undoRedo->documentSaved();
             }
-            writeSessionIni(sessionIni, fs::path(), true, pageNo, currentZoom);
+            success = writeSessionIni(sessionIni, sessionFile, true, pageNo, currentZoom);
         } else {
             g_warning("Could not save session to %s: %s", sessionFile.string().c_str(),
                       handler.getErrorMessage().c_str());
         }
     } else if (!pdfpath.empty()) {
-        writeSessionIni(sessionIni, pdfpath, false, pageNo, currentZoom);
+        success = writeSessionIni(sessionIni, pdfpath, false, pageNo, currentZoom);
     } else {
         std::error_code ec;
-        fs::remove(sessionFile, ec);
+        // Preserve a previous notebook recovery even when closing an empty window.
+        if (!notebook) fs::remove(sessionFile, ec);
+        success = true;
         // Do not remove sessionIni when closing an empty document.
         // This ensures the previous valid session is preserved if an empty window or secondary instance closes.
     }
+    this->sessionSaved = success;
+    return success;
 }
 
 void Control::quit(bool allowCancel) {
@@ -2275,6 +2347,7 @@ void Control::quit(bool allowCancel) {
     saveSessionOnQuit();
     auto afterClosed = [this, allowCancel](bool closed) {
         if (!closed) {
+            this->sessionSaved = false;
             g_message("Closing document failed or cancelled");
             if (!allowCancel) {
                 // Cancel is not allowed, and the user close or did not save
@@ -2459,13 +2532,13 @@ void Control::clipboardPasteImage(GdkPixbuf* img) {
     auto width = static_cast<double>(gdk_pixbuf_get_width(pixbuf.get())) / zoom100;
     auto height = static_cast<double>(gdk_pixbuf_get_height(pixbuf.get())) / zoom100;
 
-    auto pageNr = getCurrentPageNo();
+    auto pageNr = getEditingView()->getCurrentPage();
     if (pageNr == npos) {
         return;
     }
 
     this->doc->lock_shared();
-    PageRef page = this->doc->getPage(pageNr);
+    PageRef page = getEditingView()->getViewFor(pageNr)->getPage();
     auto pageWidth = page->getWidth();
     auto pageHeight = page->getHeight();
     page.reset();  // No need to hold a ref to the page anymore
@@ -2495,22 +2568,22 @@ void Control::clipboardPasteImage(GdkPixbuf* img) {
 void Control::clipboardPaste(ElementPtr e) {
     double x = 0;
     double y = 0;
-    auto pageNr = getCurrentPageNo();
+    auto pageNr = getEditingView()->getCurrentPage();
     if (pageNr == npos) {
         return;
     }
 
-    XojPageView* view = win->getXournal()->getViewFor(pageNr);
+    XojPageView* view = getEditingView()->getViewFor(pageNr);
     if (view == nullptr) {
         return;
     }
 
     this->doc->lock_shared();
-    PageRef page = this->doc->getPage(pageNr);
+    PageRef page = getEditingView()->getViewFor(pageNr)->getPage();
     Layer* layer = page->getSelectedLayer();
     this->doc->unlock_shared();
 
-    win->getXournal()->getPasteTarget(x, y);
+    getEditingView()->getPasteTarget(x, y);
 
     const auto& box = e->getBoundingBox();
 
@@ -2522,7 +2595,7 @@ void Control::clipboardPaste(ElementPtr e) {
     undoRedo->addUndoAction(std::make_unique<InsertUndoAction>(page, layer, e.get()));
     auto sel = SelectionFactory::createFromFloatingElement(this, page, layer, view, std::move(e));
 
-    win->getXournal()->setSelection(sel.release());
+    getEditingView()->setSelection(sel.release());
 }
 
 void Control::registerPluginToolButtons(ToolMenuHandler* toolMenuHandler) {
@@ -2530,16 +2603,16 @@ void Control::registerPluginToolButtons(ToolMenuHandler* toolMenuHandler) {
 }
 
 void Control::clipboardPasteXournal(ObjectInputStream& in) {
-    auto pNr = getCurrentPageNo();
+    auto pNr = getEditingView()->getCurrentPage();
     if (pNr == npos && win != nullptr) {
         return;
     }
 
     this->doc->lock();
-    PageRef page = this->doc->getPage(pNr);
+    PageRef page = getEditingView()->getViewFor(pNr)->getPage();
     Layer* layer = page->getSelectedLayer();
 
-    XojPageView* view = win->getXournal()->getViewFor(pNr);
+    XojPageView* view = getEditingView()->getViewFor(pNr);
 
     if (!view || !page) {
         this->doc->unlock();
@@ -2593,7 +2666,7 @@ void Control::clipboardPasteXournal(ObjectInputStream& in) {
         double x = 0;
         double y = 0;
         // calculate x/y of paste target, see clipboardPaste(Element* e)
-        win->getXournal()->getPasteTarget(x, y);
+        getEditingView()->getPasteTarget(x, y);
 
         x = std::max(0.0, x - selection->getWidth() / 2);
         y = std::max(0.0, y - selection->getHeight() / 2);
@@ -2606,7 +2679,7 @@ void Control::clipboardPasteXournal(ObjectInputStream& in) {
         // update all Elements (same procedure as moving a element selection by hand and releasing the mouse button)
         selection->mouseUp();
 
-        win->getXournal()->setSelection(selection.release());
+        getEditingView()->setSelection(selection.release());
     } catch (const std::exception& e) {
         g_warning("could not paste, Exception occurred: %s", e.what());
         Stacktrace::printStacktrace();
@@ -2614,11 +2687,11 @@ void Control::clipboardPasteXournal(ObjectInputStream& in) {
 }
 
 void Control::moveSelectionToLayer(size_t layerNo) {
-    PageRef currentP = getCurrentPage();
+    PageRef currentP = getEditingPage();
     if (layerNo >= currentP->getLayerCount()) {
         return;
     }
-    auto selection = getWindow()->getXournal()->getSelection();
+    auto selection = getEditingView()->getSelection();
     if (!selection) {
         return;
     }
@@ -2637,13 +2710,13 @@ void Control::moveSelectionToLayer(size_t layerNo) {
 
 void Control::deleteSelection() {
     if (win) {
-        win->getXournal()->deleteSelection();
+        getEditingView()->deleteSelection();
     }
 }
 
 void Control::clearSelection() {
     if (this->win) {
-        this->win->getXournal()->clearSelection();
+        this->getEditingView()->clearSelection();
         this->win->getPdfToolbox()->userCancelSelection();
     }
 }
@@ -2663,7 +2736,7 @@ void Control::setCopyCutEnabled(bool enabled) { this->clipboardHandler->setCopyC
 void Control::setFill(bool fill) {
     EditSelection* sel = nullptr;
     if (this->win) {
-        sel = this->win->getXournal()->getSelection();
+        sel = this->getEditingView()->getSelection();
     }
 
     if (sel) {
@@ -2676,8 +2749,8 @@ void Control::setFill(bool fill) {
 void Control::setLineStyle(const string& style) {
     LineStyle stl = StrokeStyle::parseStyle(style);
 
-    if (this->win && this->win->getXournal()->getSelection()) {
-        undoRedo->addUndoAction(this->win->getXournal()->getSelection()->setLineStyle(stl));
+    if (this->win && this->getEditingView()->getSelection()) {
+        undoRedo->addUndoAction(this->getEditingView()->getSelection()->setLineStyle(stl));
     } else if (this->toolHandler->getActiveTool()->getToolType() != TOOL_PEN) {
         this->selectTool(TOOL_PEN);
     }
@@ -2696,7 +2769,7 @@ void Control::setEraserType(EraserType type) {
 void Control::setToolSize(ToolSize size) {
     EditSelection* sel = nullptr;
     if (this->win) {
-        sel = this->win->getXournal()->getSelection();
+        sel = this->getEditingView()->getSelection();
     }
 
     if (sel) {
@@ -2711,7 +2784,7 @@ void Control::fontChanged(const XojFont& font) {
     settings->setFont(font);
 
     if (this->win) {
-        if (EditSelection* sel = this->win->getXournal()->getSelection(); sel) {
+        if (EditSelection* sel = this->getEditingView()->getSelection(); sel) {
             undoRedo->addUndoAction(UndoActionPtr(sel->setFont(font)));
         }
     }
@@ -2758,7 +2831,7 @@ void Control::setSnapToElements(bool enable) {
 
 auto Control::getTextEditor() -> TextEditor* {
     if (this->win) {
-        return this->win->getXournal()->getTextEditor();
+        return this->getEditingView()->getTextEditor();
     }
     return nullptr;
 }

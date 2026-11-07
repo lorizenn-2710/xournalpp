@@ -1,0 +1,36 @@
+--- a/.config/xournalpp/plugins/VK640ToolCycle/main.lua
++++ b/.config/xournalpp/plugins/VK640ToolCycle/main.lua
+@@ -388,8 +388,23 @@
+ -- VÌ SAO CẦN: các phím tắt ở đây do plugin tự thêm, KHÔNG có trong menu Trợ giúp của app, nên
+ -- không có chỗ nào tra được. Trên bảng vẽ lại càng khó nhớ. Bấm nút là ra bảng.
+
++function vk640FloatingToggle() app.floatingNotes("toggle") end
++function vk640FloatingNew() app.floatingNotes("new") end
++function vk640FloatingLibrary() app.floatingNotes("toggle-library") end
++
+ local SHORTCUT_HELP = [[
+ PHÍM TẮT — BẢNG VẼ VK640
++
++── SỔ NHÁP NỔI (native, lưu trong .xopp) ──
++  Alt + N          Gọi/cất nhóm nháp gần nhất, giữ nguyên mực
++  Ctrl + Alt + N   Tạo tờ nháp mới
++  Alt + K          Mở/cất Kho nháp; mở kho là có thể gõ tên để tìm
++  Ctrl + `         Hiện/ẩn phím tắt dưới ba nút Nháp nổi, Tờ mới, Kho nháp
++  Kéo tiêu đề      Dời khung; −/+ zoom giấy; + Giấy viết tiếp
++  Ctrl + Z         Hoàn tác trên tờ đang viết
++  Nút ⋯            Đổi tên, ghim, nhân bản, chép chọn sang trang chính, xuất PDF
++  Cất tờ ≠ xóa     Xóa riêng trong ⋯, có Ctrl+Z / Thùng rác
++  Bản Xournal++ cũ mở nháp như trang thường, lưu lại sẽ mất metadata nổi.
+
+ ── BÚT & CÔNG CỤ ─────────────────────────
+   Tab              Bút → Tẩy → Kéo trang → Bút
+@@ -943,4 +958,8 @@
+         accelerator = "<Alt>g",
+     }
+
+-end
++    app.registerUi{menu="Nháp nổi: Gọi/cất", callback="vk640FloatingToggle", accelerator="<Alt>n", toolbarId="FLOATING_NOTES", iconName="accessories-text-editor"}
++    app.registerUi{menu="Nháp nổi: Tờ mới", callback="vk640FloatingNew", accelerator="<Control><Alt>n", toolbarId="FLOATING_NEW", iconName="document-new-symbolic"}
++    app.registerUi{menu="Nháp nổi: Mở/cất kho", callback="vk640FloatingLibrary", accelerator="<Alt>k", toolbarId="FLOATING_LIBRARY", iconName="view-grid-symbolic"}
++
++end

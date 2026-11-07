@@ -12,6 +12,8 @@
 #include "control/Control.h"                            // for Control
 #include "control/DeviceListHelper.h"                   // for InputDevice
 #include "control/settings/Settings.h"                  // for Settings
+#include "gui/MainWindow.h"
+#include "gui/FloatingNotes.h"
 #include "gui/XournalView.h"                            // for XournalView
 #include "gui/dialog/DeviceTestingArea.h"               // for DeviceTestingArea
 #include "gui/inputdevices/GeometryToolInputHandler.h"  // for GeometryToolInputHandler
@@ -78,6 +80,12 @@ static gboolean keyboardCallback(GtkEventControllerKey* self, guint keyval, guin
     return (static_cast<KeyboardInputHandler*>(d)->*handler)(e);
 }
 
+void InputContext::finishSequence() {
+    if (stylusHandler) stylusHandler->finishSequence();
+    if (mouseHandler) mouseHandler->finishSequence();
+    if (touchDrawingHandler) touchDrawingHandler->finishSequence();
+}
+
 InputContext::~InputContext() {
     // Destructor is called in xournal_widget_dispose, so it can still accept events
     g_signal_handler_disconnect(this->widget, signal_id);
@@ -137,6 +145,14 @@ void InputContext::connect(GtkWidget* pWidget, bool connectKeyboardHandler,
 
 auto InputContext::handle(GdkEvent* sourceEvent) -> bool {
     printDebug(sourceEvent);
+    if (view && (sourceEvent->type == GDK_BUTTON_PRESS || sourceEvent->type == GDK_TOUCH_BEGIN))
+        view->getControl()->activateEditingView(view);
+    if (view && view->isFloating() && sourceEvent->type == GDK_SCROLL &&
+        (sourceEvent->scroll.state & GDK_CONTROL_MASK)) {
+        const auto dir = sourceEvent->scroll.direction;
+        view->setFloatingZoom(view->getZoom() * ((dir == GDK_SCROLL_UP || sourceEvent->scroll.delta_y < 0) ? 1.1 : 1/1.1));
+        return true;
+    }
 
     GdkDevice* sourceDevice = gdk_event_get_source_device(sourceEvent);
     if (sourceDevice == NULL) {
@@ -156,6 +172,12 @@ auto InputContext::handle(GdkEvent* sourceEvent) -> bool {
                             gtk_adjustment_get_value(GTK_XOURNAL(this->view->getWidget())->hadjustment),
                             gtk_adjustment_get_value(GTK_XOURNAL(this->view->getWidget())->vadjustment)} :
                     xoj::util::Point<double>{0., 0.});
+
+    if (view && event.deviceClass == INPUT_DEVICE_PEN &&
+        (event.type == MOTION_EVENT || event.type == BUTTON_PRESS_EVENT)) {
+        if (auto* notes = view->getControl()->getWindow()->getFloatingNotes())
+            notes->rememberPenPosition(view->getWidget(), event.absolute.x, event.absolute.y);
+    }
 
     // Add the device to the list of known devices if it is currently unknown
     if (gdk_device_get_device_type(sourceDevice) != GDK_DEVICE_TYPE_MASTER &&

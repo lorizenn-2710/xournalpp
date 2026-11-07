@@ -105,6 +105,11 @@ auto SaveJob::save() -> bool {
     SaveHandler h;
 
     doc->lock_shared();
+    if(doc->hasExternalModification()) {
+        doc->unlock_shared();
+        lastError="Tệp đã được một phiên khác thay đổi. Dùng Lưu như… để lưu một bản riêng, giữ cả hai bài.";
+        return false;
+    }
     fs::path target = doc->getFilepath();
     Util::safeReplaceExtension(target, "xopp");
 
@@ -117,7 +122,7 @@ auto SaveJob::save() -> bool {
         try {
             // Note: The backup must be created for the target as this is the filepath
             // which will be written to. Do not use the `filepath` variable!
-            Util::safeRenameFile(target, fs::path{target} += "~");
+            fs::copy_file(target, fs::path{target} += "~", fs::copy_options::overwrite_existing);
         } catch (const fs::filesystem_error& fe) {
             g_warning("Could not create backup! Failed with %s", fe.what());
             this->lastError = FS(_F("Save file error, can't backup: {1}") % std::string(fe.what()));
@@ -129,11 +134,6 @@ auto SaveJob::save() -> bool {
     }
 
     h.saveTo(target, this->control);
-
-    doc->lock();
-    h.updateDocumentInfo(doc);
-    doc->setFilepath(target);
-    doc->unlock();
 
     if (!h.getErrorMessage().empty()) {
         this->lastError = FS(_F("Save file error: {1}") % h.getErrorMessage());
@@ -151,6 +151,11 @@ auto SaveJob::save() -> bool {
     } else {
         doc->setCreateBackupOnSave(true);
     }
+
+    doc->lock();
+    h.updateDocumentInfo(doc);
+    doc->setFilepath(target);
+    doc->unlock();
 
     return true;
 }

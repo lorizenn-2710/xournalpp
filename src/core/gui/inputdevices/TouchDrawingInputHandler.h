@@ -20,6 +20,7 @@ struct InputEvent;
 
 class TouchDrawingInputHandler: public PenInputHandler {
 private:
+    size_t toolSubscription = 0;
     GdkEventSequence* primarySequence = nullptr;
     GdkEventSequence* secondarySequence = nullptr;
 

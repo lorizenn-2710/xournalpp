@@ -1,5 +1,6 @@
 #include "PluginToolButton.h"
 
+#include "ToolbarShortcutHints.h"
 #include "config-features.h"  // for ENABLE_PLUGINS
 
 #ifdef ENABLE_PLUGINS
@@ -32,6 +33,7 @@ auto PluginToolButton::createItem(bool) -> xoj::util::WidgetSPtr {
 
     GtkToolItem* it = gtk_tool_item_new();
     gtk_container_add(GTK_CONTAINER(it), btn);
+    ToolbarShortcutHints::setAccelerator(GTK_WIDGET(it), t->accelerator);
 
     auto createProxy = [this]() {
         GtkWidget* proxy = gtk_menu_item_new();

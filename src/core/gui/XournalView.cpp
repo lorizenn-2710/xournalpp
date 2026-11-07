@@ -19,7 +19,8 @@
 #include "control/settings/MetadataManager.h"    // for MetadataManager
 #include "control/settings/Settings.h"           // for Settings
 #include "control/tools/CursorSelectionType.h"   // for CURSOR_SELECTION_NONE
-#include "control/tools/EditSelection.h"         // for EditSelection
+#include "control/tools/EditSelection.h"         // for EditSelection, SelectionFactory
+#include "control/tools/ImageHandler.h"          // for ImageHandler
 #include "control/zoom/ZoomControl.h"            // for ZoomControl
 #include "plugin/PluginController.h"             // for PluginController
 #include "gui/MainWindow.h"                      // for MainWindow
@@ -33,10 +34,14 @@
 #include "gui/widgets/XournalWidget.h"           // for gtk_xournal_get_layout
 #include "model/Document.h"                      // for Document
 #include "model/Element.h"                       // for Element, ELEMENT_STROKE
+#include "model/Image.h"                         // for Image
+#include "model/Layer.h"                         // for Layer
 #include "model/PageRef.h"                       // for PageRef
 #include "model/Stroke.h"                        // for Stroke, StrokeTool::E...
 #include "model/XojPage.h"                       // for XojPage
 #include "undo/DeleteUndoAction.h"               // for DeleteUndoAction
+#include "undo/GroupUndoAction.h"                // for GroupUndoAction
+#include "undo/InsertUndoAction.h"               // for InsertUndoAction
 #include "undo/UndoRedoHandler.h"                // for UndoRedoHandler
 #include "util/Assert.h"                         // for xoj_assert
 #include "util/Point.h"                          // for Point
@@ -45,6 +50,9 @@
 #include "util/glib_casts.h"                     // for wrap_v
 #include "util/gtk4_helper.h"                    // for gtk_scrolled_window_set_child
 #include "util/safe_casts.h"                     // for round_cast
+#include "view/DocumentView.h"                   // for DocumentView
+#include "view/LayerView.h"                      // for LayerView
+#include "view/View.h"                           // for Context
 
 #include "Layout.h"           // for Layout
 #include "PageView.h"         // for XojPageView
@@ -65,8 +73,8 @@ std::pair<size_t, size_t> XournalView::preloadPageBounds(size_t page, size_t max
     return {lower, upper};
 }
 
-XournalView::XournalView(GtkWidget* parent, Control* control, ScrollHandling* scrollHandling):
-        scrollHandling(scrollHandling), control(control) {
+XournalView::XournalView(GtkWidget* parent, Control* control, ScrollHandling* scrollHandling, PageRef floatingPage):
+        scrollHandling(scrollHandling), control(control), floatingPage(std::move(floatingPage)) {
     Document* doc = control->getDocument();
     doc->lock_shared();
     if (doc->getPdfPageCount() != 0) {
@@ -74,7 +82,7 @@ XournalView::XournalView(GtkWidget* parent, Control* control, ScrollHandling* sc
     }
     doc->unlock_shared();
 
-    registerListener(control);
+    if (!isFloating()) registerListener(control);
 
     InputContext* inputContext = new InputContext(this, scrollHandling);
     this->widget = gtk_xournal_new(this, inputContext, scrollHandling->getVertical(), scrollHandling->getHorizontal());
@@ -96,19 +104,27 @@ XournalView::XournalView(GtkWidget* parent, Control* control, ScrollHandling* sc
 
     this->repaintHandler = std::make_unique<RepaintHandler>(this);
 
-    control->getZoomControl()->addZoomListener(this);
+    if (!isFloating()) control->getZoomControl()->addZoomListener(this);
 
     gtk_widget_set_can_default(this->widget, true);
-    gtk_widget_grab_default(this->widget);
+    if (!isFloating()) gtk_widget_grab_default(this->widget);
 
-    gtk_widget_grab_focus(this->widget);
+    if (!isFloating()) gtk_widget_grab_focus(this->widget);
 
+    if (isFloating()) {
+        floatingZoom = this->floatingPage->floatingNote->zoom;
+        viewPages.emplace_back(std::make_unique<XojPageView>(this, this->floatingPage));
+        layoutPages();
+    }
     this->cleanupTimeout = g_timeout_add_seconds(5, xoj::util::wrap_v<clearMemoryTimer>, this);
 }
 
 XournalView::~XournalView() {
     g_source_remove(this->cleanupTimeout);
 
+    finishInput();
+    clearSelection();
+    viewPages.clear();
     gtk_widget_destroy(this->widget);
     this->widget = nullptr;
 }
@@ -409,7 +425,26 @@ auto XournalView::getViewFor(size_t pageNr) const -> XojPageView* {
     return this->viewPages[pageNr].get();
 }
 
+void XournalView::finishInput() {
+    if (widget && GTK_XOURNAL(widget)->input) GTK_XOURNAL(widget)->input->finishSequence();
+    endSplineAllPages();
+    endTextAllPages();
+}
+void XournalView::setFloatingZoom(double value) {
+    if (!isFloating()) return;
+    finishInput(); clearSelection();
+    floatingZoom = std::clamp(value, .3, 3.);
+    {std::unique_lock lock(*control->getDocument());floatingPage->floatingNote->zoom = floatingZoom;}
+    layoutPages();
+    viewPages[0]->rerenderPage(true);
+}
+void XournalView::selectPageInView(size_t page) {
+    if (isFloating()) return;
+    control->firePageSelected(page);
+}
+
 void XournalView::pageSelected(size_t page) {
+    if (isFloating()) return;
     if (this->currentPage == page && this->lastSelectedPage == page) {
         return;
     }
@@ -480,7 +515,7 @@ void XournalView::scrollTo(size_t pageNo, XojPdfRectangle rect) {
     layout->ensureRectIsVisible(x, y, width, height);
 
     // Select the page
-    control->firePageSelected(pageNo);
+    selectPageInView(pageNo);
 }
 
 
@@ -546,6 +581,18 @@ auto XournalView::getVisibleRect(size_t page) const -> Rectangle<double>* {
 }
 
 auto XournalView::getVisibleRect(const XojPageView* redrawable) const -> Rectangle<double>* {
+    if (isFloating() && redrawable) {
+        // Auxiliary pages draw directly with a viewport clip. They do not depend
+        // on the main render scheduler's visibility flag (e.g. before any scroll).
+        const auto pos = redrawable->getPixelPosition();
+        const auto zoom = getZoom();
+        const Range paper(pos.x, pos.y, pos.x + redrawable->getWidth() * zoom,
+                          pos.y + redrawable->getHeight() * zoom);
+        const auto visible = paper.intersect(Range(getLayout()->getVisibleRect()));
+        if (visible.empty()) return nullptr;
+        return new Rectangle<double>((visible.minX - pos.x) / zoom, (visible.minY - pos.y) / zoom,
+                                     visible.getWidth() / zoom, visible.getHeight() / zoom);
+    }
     return gtk_xournal_get_visible_area(this->widget, redrawable);
 }
 
@@ -617,6 +664,8 @@ void XournalView::pageChanged(size_t page) {
 }
 
 void XournalView::pageDeleted(size_t page) {
+    clearLastSelectionRect();
+    setPendingImageCapture(false);
     const size_t currentPageNo = control->getCurrentPageNo();
 
     viewPages.erase(begin(viewPages) + static_cast<long>(page));
@@ -656,7 +705,7 @@ void XournalView::pageInserted(size_t page) {
     layout->updateVisibility();
 }
 
-auto XournalView::getZoom() const -> double { return control->getZoomControl()->getZoom(); }
+auto XournalView::getZoom() const -> double { return isFloating() ? floatingZoom : control->getZoomControl()->getZoom(); }
 
 auto XournalView::getDpiScaleFactor() const -> int { return gtk_widget_get_scale_factor(widget); }
 
@@ -789,6 +838,8 @@ void XournalView::documentChanged(DocumentChangeType type) {
     scheduler->removeAllJobs();
 
     clearSelection();
+    clearLastSelectionRect();
+    setPendingImageCapture(false);
 
     recreatePdfCache();
 
@@ -864,3 +915,179 @@ auto XournalView::getSelection() const -> EditSelection* {
 }
 
 auto XournalView::getLayout() const -> Layout* { return gtk_xournal_get_layout(getWidget()); }
+
+void XournalView::setPendingImageCapture(bool pending) { this->pendingImageCapture = pending; }
+
+auto XournalView::consumePendingImageCapture() -> bool {
+    const bool wasPending = this->pendingImageCapture;
+    this->pendingImageCapture = false;
+    return wasPending;
+}
+
+void XournalView::setLastSelectionRect(const PageRef& page, XojPageView* view, const Range& rect) {
+    this->lastSelectionPage = page;
+    this->lastSelectionView = view;
+    this->lastSelectionRect = rect;
+}
+
+void XournalView::clearLastSelectionRect() {
+    this->lastSelectionPage = nullptr;
+    this->lastSelectionView = nullptr;
+    this->lastSelectionRect = Range();
+}
+
+bool XournalView::peekLastSelectionRect(PageRef& outPage, Range& outRect) const {
+    if (!lastSelectionPage || !lastSelectionView || !lastSelectionRect.isValid() ||
+        lastSelectionRect.getWidth() <= 2 || lastSelectionRect.getHeight() <= 2) return false;
+    outPage = lastSelectionPage;
+    outRect = lastSelectionRect;
+    return true;
+}
+
+auto XournalView::takeLastSelectionRect(PageRef& outPage, XojPageView*& outView, Range& outRect) -> bool {
+    if (!this->lastSelectionPage || !this->lastSelectionView || this->lastSelectionRect.empty() ||
+        this->lastSelectionRect.getWidth() <= 2.0 || this->lastSelectionRect.getHeight() <= 2.0) {
+        clearLastSelectionRect();
+        return false;
+    }
+    outPage = this->lastSelectionPage;
+    outView = this->lastSelectionView;
+    outRect = this->lastSelectionRect;
+    clearLastSelectionRect();
+    return true;
+}
+
+auto XournalView::capturePageRectAsImage(const PageRef& page, XojPageView* view, const Range& rawBox) -> bool {
+    if (!page || !view || rawBox.empty()) {
+        return false;
+    }
+    const double minX = std::clamp(rawBox.minX, 0.0, page->getWidth());
+    const double minY = std::clamp(rawBox.minY, 0.0, page->getHeight());
+    const double maxX = std::clamp(rawBox.maxX, 0.0, page->getWidth());
+    const double maxY = std::clamp(rawBox.maxY, 0.0, page->getHeight());
+    if (maxX - minX <= 2.0 || maxY - minY <= 2.0) {
+        return false;
+    }
+    Range box(minX, minY, maxX, maxY);
+
+    // Return any active selection to its layer so its elements are rendered in place
+    this->clearSelection();
+    this->clearLastSelectionRect();
+    this->pendingImageCapture = false;
+
+    const bool isPdf = page->getBackgroundType().isPdfPage() && page->getPdfPageNr() != npos;
+    const bool isImgBg = page->getBackgroundType().isImagePage();
+
+    if (!isPdf && !isImgBg) {
+        bool hasElement = false;
+        for (const Layer* l: page->getLayersView()) {
+            if (!l->isVisible()) {
+                continue;
+            }
+            for (const auto& e: l->getElementsView()) {
+                if (e->intersectsArea(box.minX, box.minY, box.getWidth(), box.getHeight())) {
+                    hasElement = true;
+                    break;
+                }
+            }
+            if (hasElement) {
+                break;
+            }
+        }
+        if (!hasElement) {
+            return false;
+        }
+    }
+
+    const double dpiFactor = 300.0 / Util::DPI_NORMALIZATION_FACTOR;
+    const int pixelWidth = std::max(1, static_cast<int>(std::ceil(box.getWidth() * dpiFactor)));
+    const int pixelHeight = std::max(1, static_cast<int>(std::ceil(box.getHeight() * dpiFactor)));
+
+    cairo_surface_t* surface = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, pixelWidth, pixelHeight);
+    if (cairo_surface_status(surface) != CAIRO_STATUS_SUCCESS) {
+        cairo_surface_destroy(surface);
+        return false;
+    }
+    cairo_t* cr = cairo_create(surface);
+    cairo_scale(cr, dpiFactor, dpiFactor);
+    cairo_translate(cr, -box.minX, -box.minY);
+
+    if (isPdf) {
+        Document* doc = this->control->getDocument();
+        doc->lock_shared();
+        XojPdfPageSPtr pdfPage = doc->getPdfPage(page->getPdfPageNr());
+        doc->unlock_shared();
+        if (pdfPage) {
+            pdfPage->render(cr);
+        }
+        xoj::view::Context context = xoj::view::Context::createDefault(cr);
+        for (const Layer* l: page->getLayersView()) {
+            if (l->isVisible()) {
+                xoj::view::LayerView layerView(l);
+                layerView.draw(context);
+            }
+        }
+    } else if (isImgBg) {
+        DocumentView docView;
+        docView.setPdfCache(this->getCache());
+        docView.drawPage(page, cr, /*dontRenderEditingStroke=*/true, xoj::view::BACKGROUND_SHOW_ALL);
+    } else {
+        xoj::view::Context context = xoj::view::Context::createDefault(cr);
+        for (const Layer* l: page->getLayersView()) {
+            if (l->isVisible()) {
+                xoj::view::LayerView layerView(l);
+                layerView.draw(context);
+            }
+        }
+    }
+    cairo_destroy(cr);
+
+    GdkPixbuf* pixbuf = gdk_pixbuf_get_from_surface(surface, 0, 0, pixelWidth, pixelHeight);
+    cairo_surface_destroy(surface);
+    if (pixbuf == nullptr) {
+        return false;
+    }
+
+    gchar* pngData = nullptr;
+    gsize pngLen = 0;
+    GError* error = nullptr;
+    const bool encoded = gdk_pixbuf_save_to_buffer(pixbuf, &pngData, &pngLen, "png", &error, nullptr);
+    g_object_unref(pixbuf);
+    if (!encoded) {
+        g_clear_error(&error);
+        return false;
+    }
+
+    auto image = std::make_unique<Image>();
+    {
+        std::string data(pngData, pngLen);
+        g_free(pngData);
+        image->setImage(std::move(data));
+    }
+    if (auto err = image->renderBuffer(); err.has_value()) {
+        return false;
+    }
+
+    auto* destination = control->getEditingView();
+    if (destination != this && destination->isFloating()) {
+        control->clipboardPaste(std::move(image));
+        return true;
+    }
+    ImageHandler::automaticScaling(*image, {box.minX, box.minY, box.getWidth(), box.getHeight()}, page);
+
+    Layer* layer = page->getSelectedLayer();
+    Image* imagePtr = image.get();
+    auto groupUndoAction = std::make_unique<GroupUndoAction>();
+    groupUndoAction->addAction(std::make_unique<InsertUndoAction>(page, layer, imagePtr));
+    this->control->getUndoRedoHandler()->addUndoAction(std::move(groupUndoAction));
+
+    ToolType activeTool = this->control->getToolHandler()->getToolType();
+    if (activeTool == TOOL_HAND || xoj::tool::isPdfSelectionTool(activeTool)) {
+        this->control->selectTool(TOOL_SELECT_RECT);
+    }
+
+    auto newSelection = SelectionFactory::createFromFloatingElement(this->control, page, layer, view, std::move(image));
+    this->setSelection(newSelection.release());
+    this->repaintSelection(true);
+    return true;
+}

@@ -36,15 +36,20 @@
 #include "control/settings/Settings.h"
 #include "control/tools/EditSelection.h"
 #include "control/tools/ImageHandler.h"
+#include "control/tools/PdfElemSelection.h"
 #include "control/zoom/ZoomControl.h"
 #include "enums/Action.enum.h"
 #include "gui/Layout.h"
+#include "gui/FloatingNotes.h"
 #include "gui/MainWindow.h"
+#include "gui/PdfFloatingToolbox.h"
 #include "gui/XournalView.h"
 #include "gui/dialog/FileChooserFiltersHelper.h"
 #include "gui/dialog/XojOpenDlg.h"  // for XojO...
+#include "gui/dialog/TeachingToolsDialog.h"
 #include "gui/dialog/XojSaveDlg.h"  // for XojS...
 #include "gui/sidebar/Sidebar.h"
+#include "gui/toolbarMenubar/ToolMenuHandler.h"
 #include "gui/toolbarMenubar/model/ColorPalette.h"  // for Palette
 #include "gui/widgets/XournalWidget.h"
 #include "model/Document.h"
@@ -107,7 +112,7 @@ static std::tuple<std::optional<std::string>,       // Error
     if (type == "all") {
         auto sel = control->getWindow()->getXournal()->getSelection();
         if (sel) {
-            control->clearSelection();  // otherwise texts in the selection won't be recognized
+            control->getWindow()->getXournal()->clearSelection();  // otherwise texts in the selection won't be recognized
         }
         auto* doc = control->getDocument();
         for (size_t i = 0; i < doc->getPageCount(); i++) {
@@ -131,7 +136,7 @@ static std::tuple<std::optional<std::string>,       // Error
         // walk pages from Lua (which would also lose the undo granularity).
         auto sel = control->getWindow()->getXournal()->getSelection();
         if (sel) {
-            control->clearSelection();  // otherwise texts in the selection won't be recognized
+            control->getWindow()->getXournal()->clearSelection();  // otherwise texts in the selection won't be recognized
         }
         auto* doc = control->getDocument();
         for (size_t i = 0; i < doc->getPageCount(); i++) {
@@ -154,11 +159,11 @@ static std::tuple<std::optional<std::string>,       // Error
             }
         }
     } else if (type == "page") {
-        auto sel = control->getWindow()->getXournal()->getSelection();
+        auto sel = control->getEditingView()->getSelection();
         if (sel) {
             control->clearSelection();  // otherwise texts in the selection won't be recognized
         }
-        PageRef p = control->getCurrentPage();
+        PageRef p = control->getEditingPage();
         size_t layerID = 1;  // Layer 0 is for background and is not listed here
         for (const Layer* l: p->getLayersView()) {
             auto v = l->getElementsView();
@@ -172,18 +177,18 @@ static std::tuple<std::optional<std::string>,       // Error
             layerID++;
         }
     } else if (type == "layer") {
-        auto sel = control->getWindow()->getXournal()->getSelection();
+        auto sel = control->getEditingView()->getSelection();
         if (sel) {
             control->clearSelection();  // otherwise texts in the selection won't be recognized
         }
-        auto v = control->getCurrentPage()->getSelectedLayer()->getElementsView();
+        auto v = control->getEditingPage()->getSelectedLayer()->getElementsView();
         for (auto e = v.begin(); e != v.end(); ++e) {
             if ((*e)->getType() == elType) {
                 elements.push_back(std::make_tuple(*e, std::nullopt, std::nullopt));
             }
         }
     } else if (type == "selection") {
-        auto sel = control->getWindow()->getXournal()->getSelection();
+        auto sel = control->getEditingView()->getSelection();
         if (sel) {
             auto v = sel->getElementsView();
             for (auto e = v.begin(); e != v.end(); ++e) {
@@ -608,7 +613,7 @@ static int applib_registerUi(lua_State* L) {
     }
 
     size_t menuId = plugin->registerMenu(menu, callback, mode, accelerator, parentPath);
-    plugin->registerToolButton(menu, toolbarId, iconName, callback, mode);
+    plugin->registerToolButton(menu, toolbarId, iconName, callback, mode, accelerator);
 
     // Make sure to remove all vars which are put to the stack before!
     lua_pop(L, 7);
@@ -1027,12 +1032,12 @@ static int handleUndoRedoActionHelper(lua_State* L, Control* control, const char
         return 0;
     }
     if (strcmp("grouped", allowUndoRedoAction) == 0) {
-        PageRef const& page = control->getCurrentPage();
+        PageRef const& page = control->getEditingPage();
         Layer* layer = page->getSelectedLayer();
         UndoRedoHandler* undo = control->getUndoRedoHandler();
         undo->addUndoAction(std::make_unique<InsertsUndoAction>(page, layer, elements));
     } else if (strcmp("individual", allowUndoRedoAction) == 0) {
-        PageRef const& page = control->getCurrentPage();
+        PageRef const& page = control->getEditingPage();
         Layer* layer = page->getSelectedLayer();
         UndoRedoHandler* undo = control->getUndoRedoHandler();
         for (const Element* element: elements) {
@@ -1069,7 +1074,7 @@ static void refsHelper(lua_State* L, std::vector<const Element*> elements) {
 static void addStrokeHelper(lua_State* L, std::unique_ptr<Stroke> stroke) {
     Plugin* plugin = Plugin::getPluginFromLua(L);
     Control* ctrl = plugin->getControl();
-    PageRef const& page = ctrl->getCurrentPage();
+    PageRef const& page = ctrl->getEditingPage();
     Layer* layer = page->getSelectedLayer();
 
     std::string size;
@@ -1486,12 +1491,12 @@ static int applib_addStrokes(lua_State* L) {
     lua_getfield(L, 1, "allowUndoRedoAction");
     allowUndoRedoAction = luaL_optstring(L, -1, "grouped");
     if (strcmp("grouped", allowUndoRedoAction) == 0) {
-        PageRef const& page = ctrl->getCurrentPage();
+        PageRef const& page = ctrl->getEditingPage();
         Layer* layer = page->getSelectedLayer();
         UndoRedoHandler* undo = ctrl->getUndoRedoHandler();
         undo->addUndoAction(std::make_unique<InsertsUndoAction>(page, layer, strokes));
     } else if (strcmp("individual", allowUndoRedoAction) == 0) {
-        PageRef const& page = ctrl->getCurrentPage();
+        PageRef const& page = ctrl->getEditingPage();
         Layer* layer = page->getSelectedLayer();
         UndoRedoHandler* undo = ctrl->getUndoRedoHandler();
         for (const Element* element: strokes) {
@@ -1549,7 +1554,7 @@ static int applib_addStrokes(lua_State* L) {
 static int applib_addTexts(lua_State* L) {
     Plugin* plugin = Plugin::getPluginFromLua(L);
     Control* control = plugin->getControl();
-    PageRef const& page = control->getCurrentPage();
+    PageRef const& page = control->getEditingPage();
     Layer* layer = page->getSelectedLayer();
     Settings* settings = control->getSettings();
 
@@ -1858,7 +1863,7 @@ static int applib_getTexts(lua_State* L) {
 static int applib_addLinks(lua_State* L) {
     Plugin* plugin = Plugin::getPluginFromLua(L);
     Control* control = plugin->getControl();
-    PageRef const& page = control->getCurrentPage();
+    PageRef const& page = control->getEditingPage();
     Settings* settings = control->getSettings();
 
     std::vector<const Element*> links;
@@ -2332,6 +2337,7 @@ static int applib_deleteStrokes(lua_State* L) {
     Control* ctrl = plugin->getControl();
 
     const std::string type = luaL_checkstring(L, 1);
+    if(type == "all" || type == "notePages") ctrl->activateEditingView(nullptr);
     // Only Stroke elements are picked up, exactly as getStrokes() does, so an image on the page is not
     // mistaken for something to delete.
     auto [err, elements] = getElementsFromHelper(ctrl, type, ELEMENT_STROKE);
@@ -2359,7 +2365,7 @@ static int applib_deleteStrokes(lua_State* L) {
     // but reports nothing for "layer" and "selection", where the elements come from the layer being worked
     // on. Assuming the selected layer for everything is not harmless: on a page with two layers the strokes
     // living in the other layer would be looked up in the selected one, fail to be found, and quietly survive.
-    auto* sel = ctrl->getWindow()->getXournal()->getSelection();
+    auto* sel = ctrl->getEditingView()->getSelection();
     std::map<PageRef, std::map<Layer*, std::vector<const Element*>>> byPage;
     for (const auto& [element, pageNb, layerNb]: elements) {
         PageRef p;
@@ -2369,7 +2375,7 @@ static int applib_deleteStrokes(lua_State* L) {
             // A selection can be dragged away from the page it was taken from; it still belongs to that page.
             p = sel->getSourcePage();
         } else {
-            p = ctrl->getCurrentPage();
+            p = ctrl->getEditingPage();
         }
         if (!p) {
             continue;
@@ -2461,7 +2467,7 @@ static int applib_deleteStrokes(lua_State* L) {
 static int applib_selectionAsImage(lua_State* L) {
     Plugin* plugin = Plugin::getPluginFromLua(L);
     Control* ctrl = plugin->getControl();
-    XournalView* xournal = ctrl->getWindow()->getXournal();
+    XournalView* xournal = ctrl->getEditingView();
 
     // COPY IS THE DEFAULT, on the user's explicit correction: the shortcut is for reusing a piece of the
     // board ("...không phải là cắt lấy đi mà là copy") — taking the ink away as a side effect of making a
@@ -2480,6 +2486,34 @@ static int applib_selectionAsImage(lua_State* L) {
 
     EditSelection* sel = xournal->getSelection();
     if (sel == nullptr) {
+        if (mode == "copy") {
+            if (auto* pdfToolbox = ctrl->getWindow()->getPdfToolbox(); pdfToolbox && pdfToolbox->getSelection()) {
+                Range pdfBounds = pdfToolbox->getSelection()->getBoundsRange();
+                size_t pageNr = ctrl->getCurrentPageNo();
+                PageRef page = ctrl->getCurrentPage();
+                XojPageView* view = ctrl->getWindow()->getXournal()->getViewFor(pageNr);
+                pdfToolbox->userCancelSelection();
+                if (ctrl->getWindow()->getXournal()->capturePageRectAsImage(page, view, pdfBounds)) {
+                    lua_pushinteger(L, 1);
+                    return 1;
+                }
+            }
+            PageRef lastPage;
+            XojPageView* lastView = nullptr;
+            Range lastRect;
+            auto* sourceView = xournal->isFloating() ? ctrl->getWindow()->getXournal() : xournal;
+            if (sourceView->takeLastSelectionRect(lastPage, lastView, lastRect)) {
+                if (sourceView->capturePageRectAsImage(lastPage, lastView, lastRect)) {
+                    lua_pushinteger(L, 1);
+                    return 1;
+                }
+            }
+            // No active selection yet: switch to Select Rectangle and arm one-step image capture on drag release
+            ctrl->selectTool(TOOL_SELECT_RECT);
+            xournal->setPendingImageCapture(true);
+            lua_pushinteger(L, 1);
+            return 1;
+        }
         lua_pushinteger(L, 0);  // nothing selected: not an error, the caller reports it
         return 1;
     }
@@ -2503,6 +2537,20 @@ static int applib_selectionAsImage(lua_State* L) {
         lua_pushinteger(L, 0);
         return 1;
     }
+
+    if (mode == "copy" && (page->getBackgroundType().isPdfPage() || page->getBackgroundType().isImagePage())) {
+        PageRef lastPage;
+        XojPageView* lastView = nullptr;
+        Range lastRect;
+        if (xournal->takeLastSelectionRect(lastPage, lastView, lastRect) && lastPage == page) {
+            box = box.unite(lastRect);
+        }
+        if (xournal->capturePageRectAsImage(page, view, box)) {
+            lua_pushinteger(L, 1);
+            return 1;
+        }
+    }
+    xournal->clearLastSelectionRect();
 
     // Render at 300 dpi, the same resolution the clipboard uses, so the picture stays sharp when zoomed in.
     const double dpiFactor = 300.0 / Util::DPI_NORMALIZATION_FACTOR;
@@ -2587,7 +2635,7 @@ static int applib_selectionAsImage(lua_State* L) {
  * where the corners are, so the letters can simply be put there.
  *
  * HOW: the corners are taken from the SELECTED strokes and recognised by their number and order (see
- * SolidGeometry::vertexLabels, which holds the whole classification and is tested on its own). Nothing is
+ * SolidGeometry::vertexLabels (including S.ABC and ABC.A'B'C'), which holds the whole classification and is tested on its own). Nothing is
  * written when the selection is not a figure this knows — an unlabelled figure is better than a wrongly
  * labelled one.
  *
@@ -2602,21 +2650,28 @@ static int applib_selectionAsImage(lua_State* L) {
 static int applib_labelSelectionVertices(lua_State* L) {
     Plugin* plugin = Plugin::getPluginFromLua(L);
     Control* ctrl = plugin->getControl();
-    XournalView* xournal = ctrl->getWindow()->getXournal();
+    XournalView* xournal = ctrl->getEditingView();
 
     double fontSize = 16.0;
     double offsetX = 5.0;
     double offsetY = 20.0;
+    bool hasCustomOffset = false;
     uint32_t color = 0xff000000U;
     if (lua_istable(L, 1)) {
         lua_getfield(L, 1, "fontSize");
         fontSize = luaL_optnumber(L, -1, fontSize);
         lua_pop(L, 1);
         lua_getfield(L, 1, "offsetX");
-        offsetX = luaL_optnumber(L, -1, offsetX);
+        if (lua_isnumber(L, -1)) {
+            offsetX = lua_tonumber(L, -1);
+            hasCustomOffset = true;
+        }
         lua_pop(L, 1);
         lua_getfield(L, 1, "offsetY");
-        offsetY = luaL_optnumber(L, -1, offsetY);
+        if (lua_isnumber(L, -1)) {
+            offsetY = lua_tonumber(L, -1);
+            hasCustomOffset = true;
+        }
         lua_pop(L, 1);
         lua_getfield(L, 1, "color");
         if (lua_isinteger(L, -1)) {
@@ -2626,27 +2681,59 @@ static int applib_labelSelectionVertices(lua_State* L) {
     }
 
     EditSelection* sel = xournal->getSelection();
-    if (sel == nullptr) {
-        lua_pushinteger(L, 0);
-        return 1;
-    }
-    PageRef page = sel->getSourcePage();
-    Layer* layer = sel->getSourceLayer();
-    if (!page || !layer) {
-        lua_pushinteger(L, 0);
-        return 1;
+    PageRef page;
+    Layer* layer = nullptr;
+    std::vector<std::vector<Point>> strokes;
+
+    if (sel != nullptr) {
+        page = sel->getSourcePage();
+        layer = sel->getSourceLayer();
+        if (!page || !layer) {
+            lua_pushinteger(L, 0);
+            return 1;
+        }
+        for (const Element* e: sel->getElementsView()) {
+            if (e->getType() != ELEMENT_STROKE) {
+                continue;  // an image or a text in the selection says nothing about the corners
+            }
+            const auto* stroke = dynamic_cast<const Stroke*>(e);
+            if (stroke != nullptr && stroke->getPointCount() > 1) {
+                strokes.push_back(stroke->getPointVector());
+            }
+        }
+    } else {
+        // Fallback when no selection is active: inspect the last figure drawn at the end of the active layer
+        page = ctrl->getEditingPage();
+        layer = page ? page->getSelectedLayer() : nullptr;
+        if (!page || !layer) {
+            lua_pushinteger(L, 0);
+            return 1;
+        }
+        const auto& elems = layer->getElements();
+        if (!elems.empty() && elems.back()->getType() == ELEMENT_STROKE) {
+            std::vector<std::vector<Point>> tailDashed;
+            std::size_t idx = elems.size();
+            while (idx > 0 && elems[idx - 1]->getType() == ELEMENT_STROKE) {
+                const auto* s = static_cast<const Stroke*>(elems[idx - 1].get());
+                if (s->getPointCount() == 2 && s->getLineStyle().hasDashes() && tailDashed.size() < 4) {
+                    tailDashed.push_back(s->getPointVector());
+                    --idx;
+                } else {
+                    break;
+                }
+            }
+            if (idx > 0 && elems[idx - 1]->getType() == ELEMENT_STROKE) {
+                const auto* outline = static_cast<const Stroke*>(elems[idx - 1].get());
+                if (outline->getPointCount() >= 3 && !outline->hasPressure()) {
+                    strokes.push_back(outline->getPointVector());
+                    for (auto it = tailDashed.rbegin(); it != tailDashed.rend(); ++it) {
+                        strokes.push_back(*it);
+                    }
+                }
+            }
+        }
     }
 
-    std::vector<std::vector<Point>> strokes;
-    for (const Element* e: sel->getElementsView()) {
-        if (e->getType() != ELEMENT_STROKE) {
-            continue;  // an image or a text in the selection says nothing about the corners
-        }
-        const auto* stroke = dynamic_cast<const Stroke*>(e);
-        if (stroke != nullptr && stroke->getPointCount() > 1) {
-            strokes.push_back(stroke->getPointVector());
-        }
-    }
     if (strokes.empty()) {
         lua_pushinteger(L, 0);
         return 1;
@@ -2661,6 +2748,15 @@ static int applib_labelSelectionVertices(lua_State* L) {
     XojFont font = ctrl->getSettings()->getFont();
     font.setSize(fontSize);
 
+    double cx = 0.0;
+    double cy = 0.0;
+    for (const SolidGeometry::VertexLabel& label: labels) {
+        cx += label.position.x;
+        cy += label.position.y;
+    }
+    cx /= static_cast<double>(labels.size());
+    cy /= static_cast<double>(labels.size());
+
     auto groupUndoAction = std::make_unique<GroupUndoAction>();
     Range repaint;
     {
@@ -2670,14 +2766,26 @@ static int applib_labelSelectionVertices(lua_State* L) {
             text->setText(label.name);
             text->setFont(font);
             text->setColor(Color(color));
-            text->move(label.position.x + offsetX, label.position.y - offsetY);
+
+            double tx = label.position.x + offsetX;
+            double ty = label.position.y - offsetY;
+            if (!hasCustomOffset) {
+                const double dx = label.position.x - cx;
+                const double dy = label.position.y - cy;
+                const double len = std::hypot(dx, dy);
+                if (len > 1.0) {
+                    constexpr double RADIAL_DIST = 14.0;
+                    tx = label.position.x + (dx / len) * RADIAL_DIST - 0.35 * fontSize;
+                    ty = label.position.y + (dy / len) * RADIAL_DIST - 0.55 * fontSize;
+                }
+            }
+            text->move(tx, ty);
 
             const Element* created = text.get();
             groupUndoAction->addAction(std::make_unique<InsertUndoAction>(page, layer, created));
             // Repaint the box the letter occupies (the letter's own layout is only computed when it is
             // drawn, so the position and the font size are used directly).
-            repaint = repaint.unite(Range(label.position.x + offsetX - 2.0, label.position.y - offsetY - 2.0,
-                                          label.position.x + offsetX + fontSize, label.position.y - offsetY + fontSize));
+            repaint = repaint.unite(Range(tx - 4.0, ty - 4.0, tx + 1.5 * fontSize, ty + 1.5 * fontSize));
             layer->addElement(std::move(text));
         }
     }
@@ -2699,7 +2807,7 @@ static int applib_labelSelectionVertices(lua_State* L) {
 static int applib_refreshPage(lua_State* L) {
     Plugin* plugin = Plugin::getPluginFromLua(L);
     Control* ctrl = plugin->getControl();
-    PageRef const& page = ctrl->getCurrentPage();
+    PageRef const& page = ctrl->getEditingPage();
     if (page) {
         page->firePageChanged();
     } else {
@@ -2847,7 +2955,14 @@ static int applib_changeToolColor(lua_State* L) {
         tool.setColor(newColor);
         ctrl->toolColorChanged();
         if (selection) {
-            ctrl->changeColorOfSelection();
+            auto* sel = ctrl->getEditingView()->getSelection();
+            if (toolStr != nullptr && sel != nullptr) {
+                // An explicit tool may differ from the active selection tool. Apply that
+                // tool's requested color rather than reading the active tool's old color.
+                ctrl->getUndoRedoHandler()->addUndoAction(sel->setColor(newColor));
+            } else {
+                ctrl->changeColorOfSelection();
+            }
         }
     } else {
         return luaL_error(L, "tool \"%s\" has no color capability", toolTypeToString(toolType).data());
@@ -3214,7 +3329,7 @@ static int applib_getToolInfo(lua_State* L) {
         lua_setfield(L, -2, "color");                                // insert
         // results in {font={name="fontname", size=0}, color=0x0}
     } else if (strcmp(mode, "selection") == 0) {
-        auto sel = control->getWindow()->getXournal()->getSelection();
+        auto sel = control->getEditingView()->getSelection();
         if (!sel) {
             return luaL_error(L, "There is no selection! ");
         }
@@ -3437,6 +3552,142 @@ static int applib_scrollToPos(lua_State* L) {
     }
 
     return 0;
+}
+
+/** Show/hide shortcut captions under toolbar icons. No argument toggles them. */
+static int applib_showToolbarShortcuts(lua_State* L) {
+    auto* window = Plugin::getPluginFromLua(L)->getControl()->getWindow();
+    auto* toolbar = window->getToolMenuHandler();
+    const bool visible = lua_isnoneornil(L, 1) ? !toolbar->getShortcutHintsVisible() : lua_toboolean(L, 1);
+    if (!lua_isnoneornil(L, 1) && !lua_isboolean(L, 1)) {
+        return luaL_error(L, "showToolbarShortcuts expects a boolean or no argument");
+    }
+    toolbar->setShortcutHintsVisible(visible);
+    window->getFloatingNotes()->setShortcutHintsVisible(visible);
+    lua_pushboolean(L, visible);
+    return 1;
+}
+
+/**
+ * Visible part of the current page in document points (not layout pixels).
+ * Returns nil when the current page is not visible. Useful for inserting diagrams
+ * inside the viewport without changing zoom, scroll position or page layout.
+ */
+// Atomic teaching figure API: errors return nil, message without changing the document.
+static int applib_showMathTools(lua_State* L) {
+    // Leave the accelerator/Lua callback before entering a modal loop. Otherwise
+    // the remaining key events may target widgets hidden while the dialog opens.
+    auto* control = Plugin::getPluginFromLua(L)->getControl();
+    g_idle_add(+[](gpointer p) -> gboolean {
+        teaching::showTools(static_cast<Control*>(p));
+        return G_SOURCE_REMOVE;
+    }, control);
+    return 0;
+}
+static int applib_insertMathFigure(lua_State* L) {
+    luaL_checktype(L, 1, LUA_TTABLE);
+    try {
+        teaching::Request r;
+        auto number = [&](const char* key, double fallback) {lua_getfield(L,1,key);double v=lua_isnumber(L,-1)?lua_tonumber(L,-1):fallback;lua_pop(L,1);return v;};
+        auto boolean = [&](const char* key, bool fallback) {lua_getfield(L,1,key);bool v=lua_isboolean(L,-1)?lua_toboolean(L,-1)!=0:fallback;lua_pop(L,1);return v;};
+        auto string = [&](const char* key, const std::string& fallback) {lua_getfield(L,1,key);std::string v=lua_isstring(L,-1)?lua_tostring(L,-1):fallback;lua_pop(L,1);return v;};
+        r.pretty=boolean("pretty",false);
+        r.formulaOnly=boolean("formulaOnly",false);
+        r.curves[0].formula=string("formula",r.curves[0].formula);
+        r.curves[1].formula=string("formula2",r.curves[1].formula);
+        r.curves[1].enabled=boolean("second",false);
+        r.m=number("m",1);r.x0=number("x0",1);r.tangent=boolean("tangent",false);
+        r.window={number("xmin",-5),number("xmax",5),number("ymin",-4),number("ymax",4)};
+        r.xtick=number("xtick",1);r.ytick=number("ytick",1);
+        r.piTicks=boolean("piTicks",false);r.equalScale=boolean("equalScale",false);
+        r.xlabel=string("xlabel","x");r.ylabel=string("ylabel","y");
+        double mode=number("mode",0);
+        if(!std::isfinite(mode)||mode<0||mode>2||mode!=std::floor(mode))throw std::runtime_error("mode must be 0, 1 or 2");
+        r.mode=static_cast<int>(mode);
+        if(r.mode==2)r.manual=teaching::parseTable(string("tableX",""),string("tableSign",""),string("tableValue",""),string("tableName","f′"));
+        teaching::insert(Plugin::getPluginFromLua(L)->getControl(),r);
+        lua_pushboolean(L,true);return 1;
+    } catch(const std::exception& e) {
+        lua_pushnil(L);lua_pushstring(L,e.what());return 2;
+    }
+}
+
+// Read-only notebook inventory for automation; main page APIs keep their old scope.
+static int applib_getFloatingNotes(lua_State* L) {
+    auto* c = Plugin::getPluginFromLua(L)->getControl();
+    c->getWindow()->getFloatingNotes()->flush();
+    auto* d = c->getDocument();
+    lua_newtable(L);
+    size_t i = 0;
+    for (const auto& p : d->floatingNotes) {
+        const auto& n = *p->floatingNote;
+        lua_pushinteger(L, ++i); lua_newtable(L);
+        auto str = [&](const char* key, const std::string& value) { lua_pushstring(L,value.c_str()); lua_setfield(L,-2,key); };
+        auto num = [&](const char* key, double value) { lua_pushnumber(L,value); lua_setfield(L,-2,key); };
+        auto flag = [&](const char* key, bool value) { lua_pushboolean(L,value); lua_setfield(L,-2,key); };
+        str("id",p->stableId); str("name",n.name); str("sourceId",n.sourceId);
+        num("x",n.x);num("y",n.y);num("width",n.width);num("height",n.height);
+        num("paperWidth",p->getWidth());num("paperHeight",p->getHeight());num("zoom",n.zoom);
+        num("scrollX",n.scrollX);num("scrollY",n.scrollY);num("revision",n.revision);
+        flag("selected",c->getWindow()->getFloatingNotes()->getViewForPage(p) && c->getWindow()->getFloatingNotes()->getViewForPage(p)->getSelection());
+        flag("dirty",c->getUndoRedoHandler()->isPageChanged(p));flag("open",n.open);flag("pinned",n.pinned);flag("deleted",n.deleted);flag("active",c->getEditingPage()==p);
+        size_t count=0,points=0,tex=0,text=0,images=0;
+        double inkSignature = 0;
+        auto countElement=[&](const Element* e) {
+            if (auto* stroke=dynamic_cast<const Stroke*>(e)) {
+                ++count; points += stroke->getPointVector().size();
+                inkSignature += stroke->getWidth() * 19;
+                for (const auto& pt : stroke->getPointVector()) inkSignature += pt.x * 3 + pt.y * 7 + pt.z * 11;
+            }
+            else if (e->getType()==ELEMENT_TEXIMAGE) ++tex;
+            else if (e->getType()==ELEMENT_TEXT) ++text;
+            else if (e->getType()==ELEMENT_IMAGE) ++images;
+        };
+        for(auto* layer:p->getLayers())for(const auto& e:layer->getElements())countElement(e.get());
+        if(auto* view=c->getWindow()->getFloatingNotes()->getViewForPage(p);view && view->getSelection())
+            for(auto* e:view->getSelection()->getElementsView())countElement(e);
+        num("inkSignature",inkSignature);num("strokes",count);num("points",points);num("tex",tex);num("texts",text);num("images",images);
+        lua_settable(L,-3);
+    }
+    size_t mainStrokes=0;
+    for(size_t i=0;i<d->getPageCount();++i)for(auto* layer:d->getPage(i)->getLayers())for(const auto& e:layer->getElements())
+        if(e->getType()==ELEMENT_STROKE)++mainStrokes;
+    if(auto* selection=c->getWindow()->getXournal()->getSelection())for(auto* e:selection->getElementsView())if(e->getType()==ELEMENT_STROKE)++mainStrokes;
+    lua_pushinteger(L,static_cast<lua_Integer>(mainStrokes));
+    return 2;
+}
+
+// Native notebook commands. No auxiliary ink or session-side storage in Lua.
+static int applib_floatingNotes(lua_State* L) {
+    auto* c = Plugin::getPluginFromLua(L)->getControl();
+    auto* notes = c->getWindow()->getFloatingNotes();
+    const std::string command = luaL_optstring(L,1,"toggle");
+    if (command == "toggle") notes->toggle();
+    else if (command == "new") notes->create();
+    else if (command == "library") notes->showLibrary();
+    else if (command == "toggle-library") notes->toggleLibrary();
+    else return luaL_error(L,"floatingNotes: expected toggle, new, library or toggle-library");
+    return 0;
+}
+
+static int applib_getVisiblePageRect(lua_State* L) {
+    Control* control = Plugin::getPluginFromLua(L)->getControl();
+    auto rect = std::unique_ptr<xoj::util::Rectangle<double>>(
+            control->getEditingView()->getVisibleRect(control->getEditingView()->getCurrentPage()));
+    if (!rect || rect->width <= 0.0 || rect->height <= 0.0) {
+        lua_pushnil(L);
+        return 1;
+    }
+    lua_newtable(L);
+    lua_pushnumber(L, rect->x);
+    lua_setfield(L, -2, "x");
+    lua_pushnumber(L, rect->y);
+    lua_setfield(L, -2, "y");
+    lua_pushnumber(L, rect->width);
+    lua_setfield(L, -2, "width");
+    lua_pushnumber(L, rect->height);
+    lua_setfield(L, -2, "height");
+    return 1;
 }
 
 /**
@@ -4076,7 +4327,7 @@ static int applib_addImages(lua_State* L) {
         width *= scale;
         height *= scale;
 
-        PageRef page = control->getCurrentPage();
+        PageRef page = control->getEditingPage();
 
         // scale down keeping the current aspect ratio after the manual scaling to fit the image on the page
         // if the image already fits on the screen, no other scaling is applied here
@@ -4262,7 +4513,7 @@ static int applib_getFolder(lua_State* L) {
 static int applib_clearSelection(lua_State* L) {
     Plugin* plugin = Plugin::getPluginFromLua(L);
     Control* control = plugin->getControl();
-    XournalView* xournal = control->getWindow()->getXournal();
+    XournalView* xournal = control->getEditingView();
     xournal->clearSelection();
     return 0;
 }
@@ -4282,10 +4533,10 @@ static int applib_clearSelection(lua_State* L) {
 static int applib_addToSelection(lua_State* L) {
     Plugin* plugin = Plugin::getPluginFromLua(L);
     Control* control = plugin->getControl();
-    PageRef page = control->getCurrentPage();
-    XournalView* xournal = control->getWindow()->getXournal();
+    PageRef page = control->getEditingPage();
+    XournalView* xournal = control->getEditingView();
     EditSelection* sel = xournal->getSelection();
-    XojPageView* view = xournal->getViewFor(control->getCurrentPageNo());
+    XojPageView* view = xournal->getViewFor(control->getEditingView()->getCurrentPage());
 
     std::unordered_set<void*> refs;
     // stack now contains: -1 => table
@@ -4675,6 +4926,12 @@ static const luaL_Reg applib[] = {
         {"scrollToPage", applib_scrollToPage},
         {"scrollToPos", applib_scrollToPos},
         {"getScrollPos", applib_getScrollPos},
+        {"getVisiblePageRect", applib_getVisiblePageRect},
+        {"floatingNotes", applib_floatingNotes},
+        {"getFloatingNotes", applib_getFloatingNotes},
+        {"showMathTools", applib_showMathTools},
+        {"insertMathFigure", applib_insertMathFigure},
+        {"showToolbarShortcuts", applib_showToolbarShortcuts},
         {"setCurrentPage", applib_setCurrentPage},
         {"setPageSize", applib_setPageSize},
         {"setCurrentLayer", applib_setCurrentLayer},

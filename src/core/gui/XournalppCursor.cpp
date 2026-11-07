@@ -222,11 +222,12 @@ void XournalppCursor::updateCursor() {
         return;
     }
 
-    XournalView* xournal = win->getXournal();
+    XournalView* xournal = control->getEditingView();
     if (!xournal) {
         return;
     }
 
+    if (cursorView != xournal) {cursorView=xournal; currentCursor=0; currentCursorFlavour=0;}
     GdkCursor* cursor = nullptr;
 
 
@@ -390,7 +391,7 @@ auto XournalppCursor::getResizeCursor(double deltaAngle) -> GdkCursor* {
     GdkPixbuf* pixbuf = gdk_pixbuf_get_from_surface(crCursor, 0, 0, RESIZE_CURSOR_SIZE, RESIZE_CURSOR_SIZE);
     cairo_surface_destroy(crCursor);
     GdkCursor* cursor =
-            gdk_cursor_new_from_pixbuf(gtk_widget_get_display(control->getWindow()->getXournal()->getWidget()), pixbuf,
+            gdk_cursor_new_from_pixbuf(gtk_widget_get_display(control->getEditingView()->getWidget()), pixbuf,
                                        RESIZE_CURSOR_SIZE / 2, RESIZE_CURSOR_SIZE / 2);
     g_object_unref(pixbuf);
     return cursor;
@@ -399,7 +400,7 @@ auto XournalppCursor::getResizeCursor(double deltaAngle) -> GdkCursor* {
 auto XournalppCursor::getEraserCursor() -> GdkCursor* {
 
     // Eraser's size follow a quadratic increment, so the cursor will do the same
-    double cursorSize = control->getToolHandler()->getThickness() * 2.0 * control->getZoomControl()->getZoom();
+    double cursorSize = control->getToolHandler()->getThickness() * 2.0 * control->getEditingView()->getZoom();
     gulong flavour = static_cast<gulong>(64 * cursorSize);
 
     if (CRSR_ERASER == this->currentCursor && flavour == this->currentCursorFlavour) {
@@ -460,7 +461,7 @@ auto XournalppCursor::createHighlighterOrPenCursor(double alpha) -> GdkCursor* {
     auto cursorType = control->getSettings()->getStylusCursorType();
     auto cursor = (cursorType == STYLUS_CURSOR_NONE) ? CRSR_BLANK_CURSOR : CRSR_PENORHIGHLIGHTER;
     bool bright = control->getSettings()->isHighlightPosition();
-    double cursorSize = std::min(90., control->getToolHandler()->getThickness() * control->getZoomControl()->getZoom());
+    double cursorSize = std::min(90., control->getToolHandler()->getThickness() * control->getEditingView()->getZoom());
     int height = ceil_cast<int>(cursorSize);
     int width = height;
 
@@ -536,7 +537,7 @@ auto XournalppCursor::createHighlighterOrPenCursor(double alpha) -> GdkCursor* {
     GdkPixbuf* pixbuf = gdk_pixbuf_get_from_surface(crCursor, 0, 0, width, height);
     cairo_surface_destroy(crCursor);
     GdkCursor* gdkCursor = gdk_cursor_new_from_pixbuf(
-            gtk_widget_get_display(control->getWindow()->getXournal()->getWidget()), pixbuf, centerX, centerY);
+            gtk_widget_get_display(control->getEditingView()->getWidget()), pixbuf, centerX, centerY);
     g_object_unref(pixbuf);
     return gdkCursor;
 }
@@ -552,7 +553,7 @@ void XournalppCursor::setCursor(guint cursorID) {
         return;
     }
 
-    XournalView* xournal = win->getXournal();
+    XournalView* xournal = control->getEditingView();
     if (!xournal) {
         return;
     }
@@ -657,7 +658,7 @@ auto XournalppCursor::createCustomDrawDirCursor(int size, bool shift, bool ctrl)
     GdkPixbuf* pixbuf = gdk_pixbuf_get_from_surface(crCursor, 0, 0, width, height);
     cairo_surface_destroy(crCursor);
     GdkCursor* cursor = gdk_cursor_new_from_pixbuf(
-            gtk_widget_get_display(control->getWindow()->getXournal()->getWidget()), pixbuf, centerX, centerY);
+            gtk_widget_get_display(control->getEditingView()->getWidget()), pixbuf, centerX, centerY);
     g_object_unref(pixbuf);
 
     return cursor;

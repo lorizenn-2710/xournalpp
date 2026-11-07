@@ -63,3 +63,8 @@ Debug
 # Miscellaneous
 .DS_STORE
 *~
+
+# Local verification artifacts and Python bytecode
+/output/
+__pycache__/
+*.pyc

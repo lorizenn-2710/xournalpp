@@ -40,6 +40,10 @@ auto SetsquareInputHandler::handlePointer(InputEvent const& event) -> bool {
                     // initialize point
                     setsquareController->createRadialStroke(coords.x, coords.y);
                     return true;
+                } else if (controller->isInsideGeometryTool(coords.x, coords.y, 0)) {
+                    sequenceStart(event);
+                    this->handScrolling = true;
+                    return true;
                 } else {
                     return false;
                 }
@@ -53,6 +57,9 @@ auto SetsquareInputHandler::handlePointer(InputEvent const& event) -> bool {
                 } else if (setsquareController->existsRadialStroke()) {
                     setsquareController->updateRadialStroke(coords.x, coords.y);
                     return true;
+                } else if (this->handScrolling) {
+                    scrollMotion(event);
+                    return true;
                 }
                 return false;
             } else if (event.type == BUTTON_RELEASE_EVENT) {
@@ -62,6 +69,9 @@ auto SetsquareInputHandler::handlePointer(InputEvent const& event) -> bool {
                     return true;
                 } else if (setsquareController->existsRadialStroke()) {
                     setsquareController->finalizeRadialStroke();
+                    return true;
+                } else if (this->handScrolling) {
+                    this->handScrolling = false;
                     return true;
                 }
             }
@@ -80,6 +90,7 @@ auto SetsquareInputHandler::handlePointer(InputEvent const& event) -> bool {
                 return true;
             } else if (event.type == BUTTON_RELEASE_EVENT && this->handScrolling) {
                 this->handScrolling = false;
+                return true;
             }
         default:
             return false;

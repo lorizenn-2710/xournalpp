@@ -106,6 +106,7 @@ public:
     GeometryToolInputHandler* getGeometryToolInputHandler() const;
     void resetGeometryToolInputHandler();
 
+    void finishSequence();
     void focusWidget();
     void blockDevice(DeviceType deviceType);
     void unblockDevice(DeviceType deviceType);

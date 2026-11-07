@@ -26,7 +26,8 @@ PdfElemSelection::PdfElemSelection(double x, double y, Control* control):
         finalized(false),
         viewPool(std::make_shared<xoj::util::DispatchPool<xoj::view::PdfElementSelectionView>>()) {
 
-    if (auto pNr = control->getCurrentPage()->getPdfPageNr(); pNr != npos) {
+    selectionDocumentPage = control->getCurrentPage();
+    if (auto pNr = selectionDocumentPage->getPdfPageNr(); pNr != npos) {
         Document* doc = control->getDocument();
         doc->lock_shared();
         this->pdf = doc->getPdfPage(pNr);
@@ -60,6 +61,13 @@ bool PdfElemSelection::finalizeSelection(XojPdfPageSelectionStyle style) {
     this->selectedTextRegion = std::move(selection.region);
     this->selectedTextRects = std::move(selection.rects);
     this->selectedText = this->pdf->selectText(this->bounds, style);
+    if (style == XojPdfPageSelectionStyle::Area && this->selectedTextRects.empty()) {
+        // Keep explicit scan-area feedback even though there is no text layer.
+        auto r = getBoundsRange();
+        cairo_rectangle_int_t rect{floor_cast<int>(r.getX()), floor_cast<int>(r.getY()),
+                                  ceil_cast<int>(r.getWidth()), ceil_cast<int>(r.getHeight())};
+        this->selectedTextRegion.reset(cairo_region_create_rectangle(&rect), xoj::util::adopt);
+    }
     // Informs the windowing system of the selection -- i.e. for accessibility purposes
     gtk_clipboard_set_text(gtk_clipboard_get(GDK_SELECTION_PRIMARY), this->selectedText.c_str(),
                            strict_cast<gint>(this->selectedText.length()));
@@ -135,5 +143,10 @@ auto PdfElemSelection::getSelectedText() const -> const std::string& { return th
 auto PdfElemSelection::getSelectionPageNr() const -> size_t { return selectionPageNr; }
 
 auto PdfElemSelection::isFinalized() const -> bool { return this->finalized; }
+
+Range PdfElemSelection::getBoundsRange() const {
+    return Range(std::min(bounds.x1, bounds.x2), std::min(bounds.y1, bounds.y2), std::max(bounds.x1, bounds.x2),
+                 std::max(bounds.y1, bounds.y2));
+}
 
 void PdfElemSelection::setToolType(ToolType tType) { this->toolType = tType; }

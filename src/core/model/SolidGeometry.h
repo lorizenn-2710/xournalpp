@@ -11,10 +11,10 @@
 
 #pragma once
 
-#include <cstddef>  // for size_t
+#include <cstddef>   // for size_t
 #include <optional>  // for optional
 #include <string>    // for string
-#include <vector>   // for vector
+#include <vector>    // for vector
 
 #include "model/Point.h"  // for Point
 
@@ -88,7 +88,8 @@ struct VertexLabel {
  * HOW IT RECOGNISES THE FIGURE: only the number and the order of the corners are used, never a guess about
  * the drawing gesture:
  *   - 3 corners  -> triangle:            A, B, C
- *   - 4 corners  -> quadrilateral:       A, B, C, D
+ *   - 4 corners  -> quadrilateral A,B,C,D, or triangular pyramid A,B,C,S when its edge topology matches
+ *   - 6 corners  -> right triangular prism: lower A,B,C and vertically paired upper A',B',C'
  *   - 5 corners  -> quadrilateral pyramid: base A, B, C, D and the apex S (the walk ends at the apex)
  *   - 8 corners  -> box: the four corners of the FRONT face are A, B, C, D and their twins behind are
  *                   A', B', C', D'. The depth vector is found as the vector that maps exactly four
@@ -134,6 +135,19 @@ auto boxWireframe(const Point& f1, const Point& f2, double depthFraction, double
 auto pyramidWireframe(const Point& baseCentre, double baseWidth, double apexHeight, double depthFraction, double dx,
                       double dy) -> Wireframe;
 
+/// S directly above A, with the same quadrilateral base and face topology.
+auto rightPyramidWireframe(const Point& baseCentre, double baseWidth, double apexHeight, double depthFraction,
+                           double dx, double dy) -> Wireframe;
+
+/// Vertices A (back-left), B (front), C (back-right), S (apex).
+auto triangularPyramidWireframe(const Point& baseCentre, double baseWidth, double apexHeight) -> Wireframe;
+
+/// Vertices A, B, C on the lower base, then their vertically translated A', B', C'.
+auto triangularPrismWireframe(const Point& first, const Point& second) -> Wireframe;
+
+/// Walk actual edges only; retracing edges joins branches without spurious diagonals.
+auto triangularOutline(const Wireframe& wireframe, bool excludeHidden = false) -> std::vector<Point>;
+
 /**
  * @brief The signed area of a polygon.
  *
@@ -171,12 +185,13 @@ std::vector<std::vector<Point>> hiddenEdgePolylines(const Wireframe& wireframe);
  *
  * @param wireframe a box wireframe (see boxWireframe)
  */
-std::vector<Point> boxOutline(const Wireframe& wireframe);
+std::vector<Point> boxOutline(const Wireframe& wireframe, bool excludeHidden = false);
 
 /**
  * @brief The outline of a pyramid: the base (closed) followed by the four edges from the apex down
  * to each base corner. No edge of a pyramid is drawn twice and no diagonal is needed.
+ * When `excludeHidden` is true, only visible edges are walked so hidden edges stay dashed.
  */
-std::vector<Point> pyramidOutline(const Wireframe& wireframe);
+std::vector<Point> pyramidOutline(const Wireframe& wireframe, bool excludeHidden = false);
 
 }  // namespace SolidGeometry

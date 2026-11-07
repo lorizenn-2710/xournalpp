@@ -10,6 +10,7 @@
 #include "control/settings/Settings.h"               // for Settings
 #include "gui/GladeGui.h"                            // for GladeGui
 #include "gui/GladeSearchpath.h"
+#include "gui/MainWindow.h"
 #include "gui/ToolitemDragDrop.h"  // for ToolitemDragDrop
 #include "gui/menus/popoverMenus/PageTypeSelectionPopover.h"
 #include "gui/toolbarMenubar/model/ColorPalette.h"  // for Palette
@@ -43,10 +44,11 @@
 #include "ToolPdfCombocontrol.h"     // for ToolPdfCombocontrol
 #include "ToolSelectCombocontrol.h"  // for ToolSelectComboc...
 #include "ToolZoomSlider.h"          // for ToolZoomSlider
-#include "TooltipToolButton.h"       // for TooltipToolButton
-#include "config-dev.h"              // for TOOLBAR_CONFIG
-#include "config-features.h"         // for ENABLE_PLUGINS
-#include "filesystem.h"              // for exists
+#include "ToolbarShortcutHints.h"
+#include "TooltipToolButton.h"  // for TooltipToolButton
+#include "config-dev.h"         // for TOOLBAR_CONFIG
+#include "config-features.h"    // for ENABLE_PLUGINS
+#include "filesystem.h"         // for exists
 
 
 using std::string;
@@ -88,6 +90,18 @@ void ToolMenuHandler::populate(const GladeSearchpath* gladeSearchPath) {
 ToolMenuHandler::~ToolMenuHandler() = default;
 
 void ToolMenuHandler::freeDynamicToolbarItems() { this->toolbarColorItems.clear(); }
+
+void ToolMenuHandler::setShortcutHintsVisible(bool visible) {
+    shortcutHintsVisible = visible;
+    for (const auto& toolbar: control->getWindow()->getToolbarWidgets()) {
+        for (int i = 0; i < gtk_toolbar_get_n_items(GTK_TOOLBAR(toolbar.get())); ++i) {
+            ToolbarShortcutHints::update(gtk_window_get_application(parent),
+                                         GTK_WIDGET(gtk_toolbar_get_nth_item(GTK_TOOLBAR(toolbar.get()), i)), visible);
+        }
+    }
+}
+
+bool ToolMenuHandler::getShortcutHintsVisible() const { return shortcutHintsVisible; }
 
 void ToolMenuHandler::unloadToolbar(GtkWidget* toolbar) {
     for (int i = gtk_toolbar_get_n_items(GTK_TOOLBAR(toolbar)) - 1; i >= 0; i--) {
@@ -145,6 +159,13 @@ void ToolMenuHandler::load(const ToolbarData* d, GtkWidget* toolbar, const char*
                     if (name == item->getId()) {
                         count++;
                         auto it = item->createToolItem(horizontal);
+                        // Captions belong primarily to the side toolbars. Keep ordinary file/pen
+                        // rows compact, while also exposing PDF/note/plugin shortcuts above.
+                        if (!horizontal || StringUtils::startsWith(name, "Plugin::")) {
+                            ToolbarShortcutHints::attach(it.get(), name);
+                            ToolbarShortcutHints::update(gtk_window_get_application(parent), it.get(),
+                                                         shortcutHintsVisible);
+                        }
                         gtk_toolbar_insert(GTK_TOOLBAR(toolbar), GTK_TOOL_ITEM(it.get()), -1);
 
                         ToolitemDragDrop::attachMetadata(it.get(), dataItem.getId(), item.get());
@@ -426,11 +447,9 @@ void ToolMenuHandler::initToolItems() {
                          "draw-coordinate-system", _("Draw Coordinate System"));
     emplaceCustomItemTgl("RULER", Cat::TOOLS, Action::TOOL_DRAW_LINE, "draw-line", _("Draw Line"));
     emplaceCustomItemTgl("DRAW_SPLINE", Cat::TOOLS, Action::TOOL_DRAW_SPLINE, "draw-spline", _("Draw Spline"));
-    emplaceCustomItemTgl("DRAW_TRIANGLE", Cat::TOOLS, Action::TOOL_DRAW_TRIANGLE, "draw-triangle",
-                         _("Draw Triangle"));
+    emplaceCustomItemTgl("DRAW_TRIANGLE", Cat::TOOLS, Action::TOOL_DRAW_TRIANGLE, "draw-triangle", _("Draw Triangle"));
     emplaceCustomItemTgl("DRAW_BOX", Cat::TOOLS, Action::TOOL_DRAW_BOX, "draw-box", _("Draw Box"));
-    emplaceCustomItemTgl("DRAW_PYRAMID", Cat::TOOLS, Action::TOOL_DRAW_PYRAMID, "draw-pyramid",
-                         _("Draw Pyramid"));
+    emplaceCustomItemTgl("DRAW_PYRAMID", Cat::TOOLS, Action::TOOL_DRAW_PYRAMID, "draw-pyramid", _("Draw Pyramid"));
 
     emplaceCustomItemWithTarget("SELECT_REGION", Cat::SELECTION, Action::SELECT_TOOL, TOOL_SELECT_REGION,
                                 "select-lasso", _("Select Region"));

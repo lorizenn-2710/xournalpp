@@ -17,9 +17,9 @@ RectangleHandler::~RectangleHandler() = default;
 auto RectangleHandler::createShape(bool isAltDown, bool isShiftDown, bool isControlDown)
         -> std::pair<std::vector<Point>, Range> {
     /**
-     * Snap point to grid (if enabled)
+     * Snap point to grid or element vertices (if enabled)
      */
-    Point c = snappingHandler.snapWithElements(this->currPoint, this->startPoint, isAltDown);
+    Point c = snappingHandler.snapToGridWithElements(this->currPoint, isAltDown, true, this->startPoint);
 
     double width = c.x - this->startPoint.x;
     double height = c.y - this->startPoint.y;

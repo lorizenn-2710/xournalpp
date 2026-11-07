@@ -26,7 +26,9 @@
 #include "gui/inputdevices/InputEvents.h"  // for KeyEvent
 #include "model/DocumentChangeType.h"      // for DocumentChangeType
 #include "model/DocumentListener.h"        // for DocumentListener
+#include "model/PageRef.h"                 // for PageRef
 #include "pdf/base/XojPdfPage.h"           // for XojPdfRectangle
+#include "util/Range.h"                    // for Range
 #include "util/Util.h"                     // for npos
 
 class Control;
@@ -48,11 +50,15 @@ class Rectangle;
 
 class XournalView: public DocumentListener, public ZoomListener {
 public:
-    XournalView(GtkWidget* parent, Control* control, ScrollHandling* scrollHandling);
+    XournalView(GtkWidget* parent, Control* control, ScrollHandling* scrollHandling, PageRef floatingPage = {});
     ~XournalView() override;
 
 public:
     // Recalculate the layout width and height amd layout the pages with the updated layout size
+    bool isFloating() const { return bool(floatingPage); }
+    void selectPageInView(size_t page);
+    void finishInput();
+    void setFloatingZoom(double value);
     void layoutPages();
 
     void scrollTo(size_t pageNo, XojPdfRectangle rect = {0, 0, -1, -1});
@@ -100,6 +106,16 @@ public:
     EditSelection* getSelection() const;
     void deleteSelection(EditSelection* sel = nullptr);
     void repaintSelection(bool evenWithoutSelection = false);
+
+    void setPendingImageCapture(bool pending);
+    bool consumePendingImageCapture();
+    void setLastSelectionRect(const PageRef& page, XojPageView* view, const Range& rect);
+    void clearLastSelectionRect();
+    bool takeLastSelectionRect(PageRef& outPage, XojPageView*& outView, Range& outRect);
+    // Read-only access for PDF recognition; unlike takeLastSelectionRect this
+    // keeps Ctrl+Shift+C and cancelling/reopening the math dialog usable.
+    bool peekLastSelectionRect(PageRef& outPage, Range& outRect) const;
+    bool capturePageRectAsImage(const PageRef& page, XojPageView* view, const Range& rawBox);
 
     TextEditor* getTextEditor() const;
     std::vector<std::unique_ptr<XojPageView>> const& getViewPages() const;
@@ -181,6 +197,8 @@ private:
 
     Control* control = nullptr;
 
+    PageRef floatingPage;
+    double floatingZoom = .75;
     size_t currentPage = 0;
     size_t lastSelectedPage = npos;
 
@@ -195,6 +213,11 @@ private:
      * Memory cleanup timeout
      */
     guint cleanupTimeout = std::numeric_limits<guint>::max();
+
+    bool pendingImageCapture = false;
+    PageRef lastSelectionPage;
+    XojPageView* lastSelectionView = nullptr;
+    Range lastSelectionRect;
 
     friend class Layout;
 };

@@ -24,7 +24,7 @@ UndoRedoController::UndoRedoController(Control* control): control(control) {}
 UndoRedoController::~UndoRedoController() = default;
 
 void UndoRedoController::before() {
-    EditSelection* selection = control->getWindow()->getXournal()->getSelection();
+    EditSelection* selection = control->getEditingView()->getSelection();
     if (selection != nullptr) {
         layer = selection->getSourceLayer();
         elements = selection->getElementsView().clone();
@@ -43,10 +43,10 @@ void UndoRedoController::after() {
 
     Document* doc = control->getDocument();
 
-    PageRef page = control->getCurrentPage();
+    PageRef page = control->getEditingPage();
     std::unique_lock lock(*doc);
-    size_t pageNo = doc->indexOf(page);
-    XojPageView* view = control->getWindow()->getXournal()->getViewFor(pageNo);
+    size_t pageNo = control->getEditingView()->getCurrentPage();
+    XojPageView* view = control->getEditingView()->getViewFor(pageNo);
 
     if (!view || !page) {
         // The page may have been undone
@@ -65,7 +65,7 @@ void UndoRedoController::after() {
         lock.unlock();  // For all other paths, the lock is released via ~unique_lock()
         auto [sel, bounds] =
                 SelectionFactory::createFromFloatingElements(control, page, layer, view, std::move(removedElements));
-        control->getWindow()->getXournal()->setSelection(sel.release());
+        control->getEditingView()->setSelection(sel.release());
         page->fireRangeChanged(bounds);
     }
 }

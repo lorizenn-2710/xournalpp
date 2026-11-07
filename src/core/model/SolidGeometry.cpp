@@ -2,8 +2,9 @@
 
 #include <algorithm>  // for max
 #include <cmath>      // for abs
-#include <optional>   // for optional
-#include <string>     // for string
+#include <functional>
+#include <optional>  // for optional
+#include <string>    // for string
 
 namespace {
 // Box corners: the front face first, in the order the outline is drawn, then each back corner,
@@ -40,18 +41,18 @@ auto SolidGeometry::boxWireframe(const Point& f1, const Point& f2, double depthF
     // Every face is listed in one rotational order, so the sign of its projected area says which
     // way it points; every edge names the two faces that meet at it.
     w.faces = {
-            {BA, BB, BCC, BDD},    // front
-            {BB, BB2, BCC2, BCC},   // right
+            {BA, BB, BCC, BDD},      // front
+            {BB, BB2, BCC2, BCC},    // right
             {BCC, BCC2, BDD2, BDD},  // bottom
-            {BDD, BDD2, BA2, BA},   // left
-            {BA, BA2, BB2, BB},    // top
+            {BDD, BDD2, BA2, BA},    // left
+            {BA, BA2, BB2, BB},      // top
             {BB2, BA2, BDD2, BCC2},  // back
     };
     w.edges = {
-            {BA, BB, BOX_FRONT, BOX_TOP},     {BB, BCC, BOX_FRONT, BOX_RIGHT},  {BCC, BDD, BOX_FRONT, BOX_BOTTOM},
-            {BDD, BA, BOX_FRONT, BOX_LEFT},   {BA, BA2, BOX_TOP, BOX_LEFT},     {BB, BB2, BOX_TOP, BOX_RIGHT},
-            {BCC, BCC2, BOX_RIGHT, BOX_BOTTOM}, {BDD, BDD2, BOX_LEFT, BOX_BOTTOM}, {BA2, BB2, BOX_BACK, BOX_TOP},
-            {BB2, BCC2, BOX_BACK, BOX_RIGHT},  {BCC2, BDD2, BOX_BACK, BOX_BOTTOM}, {BDD2, BA2, BOX_BACK, BOX_LEFT},
+            {BA, BB, BOX_FRONT, BOX_TOP},       {BB, BCC, BOX_FRONT, BOX_RIGHT},    {BCC, BDD, BOX_FRONT, BOX_BOTTOM},
+            {BDD, BA, BOX_FRONT, BOX_LEFT},     {BA, BA2, BOX_TOP, BOX_LEFT},       {BB, BB2, BOX_TOP, BOX_RIGHT},
+            {BCC, BCC2, BOX_RIGHT, BOX_BOTTOM}, {BDD, BDD2, BOX_LEFT, BOX_BOTTOM},  {BA2, BB2, BOX_BACK, BOX_TOP},
+            {BB2, BCC2, BOX_BACK, BOX_RIGHT},   {BCC2, BDD2, BOX_BACK, BOX_BOTTOM}, {BDD2, BA2, BOX_BACK, BOX_LEFT},
     };
     w.visibleFace = BOX_FRONT;  // visible whatever the depth direction
     return w;
@@ -64,10 +65,10 @@ auto SolidGeometry::pyramidWireframe(const Point& baseCentre, double baseWidth, 
 
     Wireframe w;
     w.vertices = {
-            Point{baseCentre.x - halfW, baseCentre.y},                  // b1 front-left
-            Point{baseCentre.x + halfW, baseCentre.y},                  // b2 front-right
-            Point{baseCentre.x + halfW + d.x, baseCentre.y + d.y},      // b3 back-right
-            Point{baseCentre.x - halfW + d.x, baseCentre.y + d.y},      // b4 back-left
+            Point{baseCentre.x - halfW, baseCentre.y},                   // b1 front-left
+            Point{baseCentre.x + halfW, baseCentre.y},                   // b2 front-right
+            Point{baseCentre.x + halfW + d.x, baseCentre.y + d.y},       // b3 back-right
+            Point{baseCentre.x - halfW + d.x, baseCentre.y + d.y},       // b4 back-left
             Point{baseCentre.x + d.x / 2.0, baseCentre.y - apexHeight},  // apex
     };
 
@@ -84,9 +85,9 @@ auto SolidGeometry::pyramidWireframe(const Point& baseCentre, double baseWidth, 
             {P4, P1, APEX},    // lateral face standing on the left edge
     };
     w.edges = {
-            {P1, P2, P_BASE, P_FRONT}, {P2, P3, P_BASE, P_RIGHT}, {P3, P4, P_BASE, P_BACK}, {P4, P1, P_BASE, P_LEFT},
-            {P1, APEX, P_FRONT, P_LEFT}, {P2, APEX, P_FRONT, P_RIGHT}, {P3, APEX, P_RIGHT, P_BACK},
-            {P4, APEX, P_BACK, P_LEFT},
+            {P1, P2, P_BASE, P_FRONT},   {P2, P3, P_BASE, P_RIGHT},   {P3, P4, P_BASE, P_BACK},
+            {P4, P1, P_BASE, P_LEFT},    {P1, APEX, P_FRONT, P_LEFT}, {P2, APEX, P_FRONT, P_RIGHT},
+            {P3, APEX, P_RIGHT, P_BACK}, {P4, APEX, P_BACK, P_LEFT},
     };
     // The front lateral face is the reference: it is the face the viewer looks at when the figure
     // is drawn upright, and with the base wound the same way round as the lateral faces (see the
@@ -95,6 +96,71 @@ auto SolidGeometry::pyramidWireframe(const Point& baseCentre, double baseWidth, 
     // is nothing to gain from a special case.
     w.visibleFace = P_FRONT;
     return w;
+}
+
+auto SolidGeometry::rightPyramidWireframe(const Point& centre, double width, double height, double depthFraction,
+                                          double dx, double dy) -> Wireframe {
+    auto w = pyramidWireframe(centre, width, height, depthFraction, dx, dy);
+    w.vertices[APEX] = Point(w.vertices[P1].x, w.vertices[P1].y - height);
+    return w;
+}
+
+auto SolidGeometry::triangularPyramidWireframe(const Point& centre, double width, double height) -> Wireframe {
+    Wireframe w;
+    const double depth = 0.28 * std::abs(width) * (height >= 0.0 ? 1.0 : -1.0);
+    w.vertices = {{centre.x - width / 2.0, centre.y},
+                  {centre.x, centre.y + depth},
+                  {centre.x + width / 2.0, centre.y},
+                  {centre.x, centre.y - height}};
+    w.faces = {{2, 1, 0}, {0, 1, 3}, {1, 2, 3}, {2, 0, 3}};
+    w.edges = {{0, 1, 0, 1}, {1, 2, 0, 2}, {2, 0, 0, 3}, {0, 3, 1, 3}, {1, 3, 1, 2}, {2, 3, 2, 3}};
+    w.visibleFace = 1;
+    return w;
+}
+
+auto SolidGeometry::triangularPrismWireframe(const Point& first, const Point& second) -> Wireframe {
+    const double left = std::min(first.x, second.x), right = std::max(first.x, second.x);
+    const double top = std::min(first.y, second.y), bottom = std::max(first.y, second.y);
+    // Use part of the drag height for perspective, leaving equal vertical side edges.
+    const double depth = std::min((right - left) * 0.28, (bottom - top) * 0.3);
+    const double height = bottom - top - depth;
+    const double middle = (left + right) / 2.0;
+    Wireframe w;
+    w.vertices = {{left, bottom - depth},          {middle, bottom},          {right, bottom - depth},
+                  {left, bottom - depth - height}, {middle, bottom - height}, {right, bottom - depth - height}};
+    w.faces = {{2, 1, 0}, {3, 4, 5}, {0, 1, 4, 3}, {1, 2, 5, 4}, {2, 0, 3, 5}};
+    w.edges = {{0, 1, 0, 2}, {1, 2, 0, 3}, {2, 0, 0, 4}, {3, 4, 1, 2}, {4, 5, 1, 3},
+               {5, 3, 1, 4}, {0, 3, 2, 4}, {1, 4, 2, 3}, {2, 5, 3, 4}};
+    w.visibleFace = 2;
+    return w;
+}
+
+auto SolidGeometry::triangularOutline(const Wireframe& w, bool excludeHidden) -> std::vector<Point> {
+    if (w.vertices.size() != 4 && w.vertices.size() != 6) {
+        return {};
+    }
+    const auto hidden = excludeHidden ? hiddenEdges(w) : std::vector<std::size_t>{};
+    std::vector<bool> visited(w.edges.size(), false);
+    std::vector<Point> points{w.vertices[0]};
+    std::function<void(std::size_t)> walk = [&](std::size_t from) {
+        for (std::size_t i = 0; i < w.edges.size(); ++i) {
+            const auto& e = w.edges[i];
+            if (visited[i] || std::find(hidden.begin(), hidden.end(), i) != hidden.end() ||
+                (e.from != from && e.to != from)) {
+                continue;
+            }
+            visited[i] = true;
+            const auto to = e.from == from ? e.to : e.from;
+            points.push_back(w.vertices[to]);
+            walk(to);
+            points.push_back(w.vertices[from]);
+        }
+    };
+    walk(0);
+    if (w.vertices.size() == 4) {
+        points.push_back(w.vertices[3]);  // S is the endpoint, as for quadrilateral pyramids.
+    }
+    return points;
 }
 
 auto SolidGeometry::signedArea(const std::vector<Point>& vertices, const std::vector<std::size_t>& face) -> double {
@@ -209,6 +275,98 @@ auto SolidGeometry::vertexLabels(const std::vector<std::vector<Point>>& strokes)
 
     std::vector<VertexLabel> labels;
 
+    auto connected = [&](const Point& a, const Point& b) {
+        for (const auto& stroke: strokes) {
+            for (std::size_t j = 1; j < stroke.size(); ++j) {
+                if ((samePoint(stroke[j - 1], a) && samePoint(stroke[j], b)) ||
+                    (samePoint(stroke[j - 1], b) && samePoint(stroke[j], a))) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    };
+    // A triangular pyramid has three non-collinear base vertices (A,C level) and an
+    // actual edge from S to each one. A plain quadrilateral must keep A,B,C,D.
+    if (corners.size() == 4 && outline->size() >= 6) {
+        const Point apex = outline->back();
+        std::vector<Point> base;
+        for (const auto& c: corners) {
+            if (!samePoint(c, apex)) {
+                base.push_back(c);
+            }
+        }
+        if (base.size() == 3 && std::abs(base[0].y - base[2].y) <= SAME_CORNER &&
+            std::abs(base[1].y - base[0].y) > SAME_CORNER && connected(apex, base[0]) && connected(apex, base[1]) &&
+            connected(apex, base[2]) && connected(base[0], base[1]) && connected(base[1], base[2])) {
+            return {{base[0], "A"}, {base[1], "B"}, {base[2], "C"}, {apex, "S"}};
+        }
+    }
+
+    if (corners.size() == 6) {
+        // A right triangular prism consists of two triangles related by one vertical
+        // translation. Reject six-point curves or unrelated triangles.
+        std::vector<Point> lower;
+        std::optional<double> height;
+        for (const auto& p: corners) {
+            for (const auto& q: corners) {
+                if (std::abs(p.x - q.x) <= SAME_CORNER && p.y - q.y > SAME_CORNER) {
+                    const double h = p.y - q.y;
+                    std::vector<Point> candidates;
+                    for (const auto& c: corners) {
+                        if (contains(corners, Point(c.x, c.y - h))) {
+                            candidates.push_back(c);
+                        }
+                    }
+                    if (candidates.size() == 3 && std::abs(signedArea(candidates, {0, 1, 2})) > 1.0) {
+                        lower = std::move(candidates);
+                        height = h;
+                        break;
+                    }
+                }
+            }
+            if (height) {
+                break;
+            }
+        }
+        if (!height) {
+            return {};
+        }
+        // Canonical A at left, B at the front, C at right, even after selecting only
+        // the outline or changing the order of the short hidden-edge strokes.
+        std::sort(lower.begin(), lower.end(), [](const Point& a, const Point& b) { return a.x < b.x; });
+        for (std::size_t j = 0; j < 3; ++j) {
+            const auto& p = lower[j];
+            const auto& q = lower[(j + 1) % 3];
+            const Point upperP(p.x, p.y - *height), upperQ(q.x, q.y - *height);
+            if (!connected(p, upperP) || !connected(upperP, upperQ) || (j < 2 && !connected(p, q))) {
+                return {};  // two unrelated triangles are not a prism
+            }
+        }
+        for (std::size_t j = 0; j < 3; ++j) {
+            const std::string name(1, static_cast<char>('A' + j));
+            labels.push_back({lower[j], name});
+            labels.push_back({Point(lower[j].x, lower[j].y - *height), name + "'"});
+        }
+        return labels;
+    }
+
+    if (corners.size() == 4 && outline->size() >= 6 && !samePoint(outline->front(), outline->back())) {
+        // Pyramid whose solid visible outline was selected without the dashed hidden edges (P1, P2, P3, APEX):
+        // reconstruct the hidden base corner P4 = P1 + (P3 - P2) of the parallelogram base.
+        const Point apex = outline->back();
+        std::vector<Point> baseVis;
+        for (const Point& c: corners) {
+            if (!samePoint(c, apex)) {
+                baseVis.push_back(c);
+            }
+        }
+        if (baseVis.size() == 3) {
+            const Point p4{baseVis[0].x + (baseVis[2].x - baseVis[1].x), baseVis[0].y + (baseVis[2].y - baseVis[1].y)};
+            corners.push_back(p4);
+        }
+    }
+
     if (corners.size() == 3 || corners.size() == 4) {
         // Triangle / quadrilateral: name the corners in the order they were drawn.
         for (std::size_t i = 0; i < corners.size(); ++i) {
@@ -237,6 +395,32 @@ auto SolidGeometry::vertexLabels(const std::vector<std::vector<Point>>& strokes)
         return labels;
     }
 
+    if (corners.size() == 7 && outline->size() >= 10 && samePoint(outline->front(), outline->back())) {
+        // Box whose solid visible outline was selected without the 3 dashed hidden strokes (4 front corners
+        // + 3 visible back corners): reconstruct the 8th (hidden back) corner from the depth vector.
+        for (std::size_t i = 0; i < 4; ++i) {
+            for (std::size_t j = 4; j < 7; ++j) {
+                const Point v{corners[j].x - corners[i].x, corners[j].y - corners[i].y};
+                std::size_t matches = 0;
+                std::size_t missingIdx = 4;
+                for (std::size_t f = 0; f < 4; ++f) {
+                    if (contains(corners, Point{corners[f].x + v.x, corners[f].y + v.y})) {
+                        ++matches;
+                    } else {
+                        missingIdx = f;
+                    }
+                }
+                if (matches == 3 && missingIdx < 4) {
+                    corners.push_back(Point{corners[missingIdx].x + v.x, corners[missingIdx].y + v.y});
+                    break;
+                }
+            }
+            if (corners.size() == 8) {
+                break;
+            }
+        }
+    }
+
     if (corners.size() == 8) {
         // Box: find the depth vector as the shift that maps exactly four corners onto four others. Both v
         // and -v do that, so the direction is fixed by the walk's starting corner, which is a front corner.
@@ -248,6 +432,9 @@ auto SolidGeometry::vertexLabels(const std::vector<std::vector<Point>>& strokes)
                     continue;
                 }
                 const Point v{to.x - from.x, to.y - from.y};
+                if (std::abs(v.x) <= SAME_CORNER || std::abs(v.y) <= SAME_CORNER) {
+                    continue;  // front-face edges are axis-aligned; the oblique depth vector is diagonal
+                }
                 std::size_t pairs = 0;
                 for (const Point& p: corners) {
                     if (contains(corners, Point{p.x + v.x, p.y + v.y})) {
@@ -287,22 +474,66 @@ auto SolidGeometry::vertexLabels(const std::vector<std::vector<Point>>& strokes)
     return {};  // not a figure this knows: say nothing rather than something wrong
 }
 
-auto SolidGeometry::boxOutline(const Wireframe& wireframe) -> std::vector<Point> {
+auto SolidGeometry::boxOutline(const Wireframe& wireframe, bool excludeHidden) -> std::vector<Point> {
     if (wireframe.vertices.size() != 8) {
         return {};
     }
     const auto& v = wireframe.vertices;
+    if (excludeHidden) {
+        const auto hidden = hiddenEdges(wireframe);
+        if (!hidden.empty()) {
+            std::size_t k = 3;
+            for (std::size_t b = 4; b < 8; ++b) {
+                std::size_t deg = 0;
+                for (std::size_t idx: hidden) {
+                    if (wireframe.edges[idx].from == b || wireframe.edges[idx].to == b) {
+                        ++deg;
+                    }
+                }
+                if (deg >= 2) {
+                    k = b - 4;
+                    break;
+                }
+            }
+            const std::size_t i1 = (k + 1) % 4;
+            const std::size_t i2 = (k + 2) % 4;
+            const std::size_t i3 = (k + 3) % 4;
+
+            // Walk the front face first (BA -> BB -> BCC -> BDD -> BA) so vertexLabels sees the front
+            // corners in canonical order, then walk the 3 visible depth edges and 2 visible back edges,
+            // and close back to BA along the front face. None of the 3 hidden edges is touched.
+            std::vector<std::size_t> visWalk = {BA, BB, BCC, BDD, BA};
+            for (std::size_t s = 1; s <= i1; ++s) {
+                visWalk.push_back(s);
+            }
+            visWalk.push_back(4 + i1);
+            visWalk.push_back(4 + i2);
+            visWalk.push_back(i2);
+            visWalk.push_back(4 + i2);
+            visWalk.push_back(4 + i3);
+            visWalk.push_back(i3);
+            for (std::size_t s = i3; s != 0; s = (s + 1) % 4) {
+                visWalk.push_back((s + 1) % 4);
+            }
+            std::vector<Point> outline;
+            outline.reserve(visWalk.size());
+            for (std::size_t idx: visWalk) {
+                outline.push_back(v[idx]);
+            }
+            return outline;
+        }
+    }
     // A single closed walk that covers all twelve edges without ever crossing a face: around the
     // back face, then across the four joining edges (each twice, i.e. simply overdrawn and
     // invisible), then around the front face. See the header for why a single stroke cannot cover
     // a box's edges exactly once.
     const std::vector<std::size_t> walk = {
-            BA,   BA2,  BB2, BCC2, BDD2,  // back face
-            BA2,  BA,                     // top-left joining edge, out and back
-            BB,   BB2, BB,                // top-right joining edge
-            BCC,  BCC2, BCC,              // bottom-right joining edge
-            BDD,  BDD2, BDD,              // bottom-left joining edge
-            BA,                           // close the front face
+            BA,  BA2,  BB2, BCC2, BDD2,  // back face
+            BA2, BA,                     // top-left joining edge, out and back
+            BB,  BB2,  BB,               // top-right joining edge
+            BCC, BCC2, BCC,              // bottom-right joining edge
+            BDD, BDD2, BDD,              // bottom-left joining edge
+            BA,                          // close the front face
     };
     std::vector<Point> outline;
     outline.reserve(walk.size());
@@ -312,16 +543,78 @@ auto SolidGeometry::boxOutline(const Wireframe& wireframe) -> std::vector<Point>
     return outline;
 }
 
-auto SolidGeometry::pyramidOutline(const Wireframe& wireframe) -> std::vector<Point> {
+auto SolidGeometry::pyramidOutline(const Wireframe& wireframe, bool excludeHidden) -> std::vector<Point> {
     if (wireframe.vertices.size() != 5) {
         return {};
     }
     const auto& v = wireframe.vertices;
+    if (excludeHidden) {
+        const auto hidden = hiddenEdges(wireframe);
+        if (!hidden.empty()) {
+            auto isVis = [&](std::size_t edgeIdx) {
+                return std::find(hidden.begin(), hidden.end(), edgeIdx) == hidden.end();
+            };
+            // P_FRONT ({P1, P2, APEX}) is the reference visible face, so edges 0 (P1-P2),
+            // 4 (P1-APEX), and 5 (P2-APEX) are always visible. Walk all visible base edges first
+            // returning to P1, then step P1 -> APEX and traverse each remaining visible lateral
+            // edge out-and-back so the walk finishes at APEX without touching any hidden edge.
+            std::vector<std::size_t> walk = {P1, P2};
+            if (isVis(1)) {
+                walk.push_back(P3);
+                if (isVis(2)) {
+                    walk.push_back(P4);
+                    if (isVis(3)) {
+                        walk.push_back(P1);
+                    } else {
+                        walk.push_back(P3);
+                        walk.push_back(P2);
+                        walk.push_back(P1);
+                    }
+                } else {
+                    walk.push_back(P2);
+                    walk.push_back(P1);
+                    if (isVis(3)) {
+                        walk.push_back(P4);
+                        walk.push_back(P1);
+                    }
+                }
+            } else {
+                walk.push_back(P1);
+                if (isVis(3)) {
+                    walk.push_back(P4);
+                    if (isVis(2)) {
+                        walk.push_back(P3);
+                        walk.push_back(P4);
+                    }
+                    walk.push_back(P1);
+                }
+            }
+            walk.push_back(APEX);
+            if (isVis(7)) {
+                walk.push_back(P4);
+                walk.push_back(APEX);
+            }
+            if (isVis(6)) {
+                walk.push_back(P3);
+                walk.push_back(APEX);
+            }
+            if (isVis(5)) {
+                walk.push_back(P2);
+                walk.push_back(APEX);
+            }
+            std::vector<Point> outline;
+            outline.reserve(walk.size());
+            for (std::size_t idx: walk) {
+                outline.push_back(v[idx]);
+            }
+            return outline;
+        }
+    }
     return {
-            v[P1], v[P2], v[P3], v[P4], v[P1],  // base (closed)
-            v[P4], v[APEX],                     // lateral edge to the back-left corner
-            v[P3], v[APEX],                     // lateral edge to the back-right corner
-            v[P2], v[APEX],                     // lateral edge to the front-right corner
-            v[P1], v[APEX],                     // lateral edge to the front-left corner
+            v[P1], v[P2],   v[P3], v[P4], v[P1],  // base (closed)
+            v[P4], v[APEX],                       // lateral edge to the back-left corner
+            v[P3], v[APEX],                       // lateral edge to the back-right corner
+            v[P2], v[APEX],                       // lateral edge to the front-right corner
+            v[P1], v[APEX],                       // lateral edge to the front-left corner
     };
 }

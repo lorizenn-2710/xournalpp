@@ -3,7 +3,7 @@
    /home/phuc/.config/xournalpp/plugins/VK640ToolCycle/main.lua
 
  Nội dung:
- * 16 mục registerUi — callback + accelerator (mục menu-only thì KHÔNG có phím tắt)
+ * 22 mục registerUi — callback + accelerator (mục menu-only thì KHÔNG có phím tắt)
  * Ctrl+U        -> vk640EraseInk          : xoá HẾT nét bút trên TRANG ĐANG XEM
  * Ctrl+Shift+M  -> vk640EraseNotePagesInk : xoá MỰC BÚT trên MỌI trang giấy nháp
                    (gọi app.deleteStrokes("notePages"); KHÔNG xoá trang, KHÔNG xoá ảnh/chữ/nền)
@@ -65,7 +65,7 @@ local function newApp(withDelete, withFigures)
  imageResult = 1
  labelResult = 8
  app = {
- C = { Tool_pen = 1, Tool_eraser = 2, Tool_hand = 13 },
+ C = { Tool_pen = 1, Tool_eraser = 2, Tool_hand = 13, Tool_selectRect = 6 },
  registerUi = function(t) registered[#registered + 1] = t end,
  openDialog = function(msg, buttons, cb, isError)
  dialogs[#dialogs + 1] = { msg = msg, buttons = buttons, cb = cb, err = isError }
@@ -123,7 +123,7 @@ local EXPECTED = {
  { cb = "vk640CycleTool", accel = "Tab" },
  { cb = "vk640CycleToolCtrl", accel = "<Control>Tab" },
  { cb = "vk640CycleToolF8", accel = "F8" },
- { cb = "vk640ToggleColumns", accel = "<Control>grave" },
+ { cb = "vk640ToggleColumns", accel = "<Alt>grave" },
  { cb = "vk640SplitPdfNoteShift", accel = "<Shift>y" },
  { cb = "vk640SplitPdfNote", accel = "<Control>y" },
  { cb = "vk640ToggleDashed", accel = "<Control>j" },
@@ -136,6 +136,16 @@ local EXPECTED = {
  { cb = "vk640LabelVertices", accel = "<Control><Shift>n" },
  { cb = "vk640SelectionToImage", accel = "<Control><Shift>c" },
  { cb = "vk640ShortcutHelp", accel = "F1" },
+ { cb = "vk640CycleColor", accel = "<Alt>c" },
+ { cb = "vk640ToggleLine", accel = "<Alt>l" },
+ { cb = "vk640ToggleArrow", accel = "<Alt>v" },
+ { cb = "vk640SineOne", accel = "<Alt>s" },
+ { cb = "vk640SineTwo", accel = "<Alt><Shift>s" },
+ { cb = "vk640ToggleShortcutHints", accel = "<Control>grave" },
+ { cb = "vk640MathTools", accel = "<Alt>g" },
+ { cb = "vk640FloatingToggle", accel = "<Alt>n" },
+ { cb = "vk640FloatingNew", accel = "<Control><Alt>n" },
+ { cb = "vk640FloatingLibrary", accel = "<Alt>k" },
 }
 doc = docOf(1, 1, 0)
 newApp(true)
@@ -553,6 +563,151 @@ do
  vk640LabelVertices()
  check(dialogs[#dialogs].err == true and dialogs[#dialogs].msg:find("KHÔNG có hàm") ~= nil,
  "app thiếu hàm -> nói rõ là thiếu", dialogs[#dialogs].msg)
+end
+
+-- New teaching shortcuts: test state changes, debounce, actual waveform samples and selection.
+do
+ doc = {{ pageWidth = 600, pageHeight = 800 }}
+ newApp(true, true)
+ local state = { ["select-tool"] = app.C.Tool_pen }
+ local penColor = 0x123456
+ local colorCalls, lastColor = 0, nil
+ local batches, selected, cleared = {}, nil, 0
+ app.getDocumentStructure = function() return { pages = doc, currentPage = 1 } end
+ app.getToolInfo = function() return { color = penColor } end
+ app.getActionState = function(name) return state[name] end
+ app.changeActionState = function(name, value)
+  if name == "tool-draw-line" or name == "tool-draw-arrow" then
+   state["tool-draw-line"], state["tool-draw-arrow"] = false, false
+  end
+  state[name] = value
+ end
+ app.changeToolColor = function(opts)
+  colorCalls, lastColor = colorCalls + 1, opts
+  penColor = opts.color
+ end
+ app.clearSelection = function() cleared = cleared + 1 end
+ app.addStrokes = function(opts) batches[#batches+1] = opts; return { "wave-ref" } end
+ app.addToSelection = function(refs) selected = refs end
+ for _, color in ipairs({0xff0000, 0x0000ff, 0x008000, 0x000000, 0xff0000}) do
+  fakeUp = fakeUp + 1
+  vk640CycleColor()
+  check(penColor == color and lastColor.tool == "pen" and lastColor.selection == true,
+        "Alt+C: đúng thứ tự màu, áp cả vùng chọn")
+ end
+ local n = colorCalls
+ vk640CycleColor()
+ check(colorCalls == n, "Alt+C chống auto-repeat")
+ fakeUp = fakeUp + 1
+ vk640ToggleLine()
+ check(state["tool-draw-line"] == true and state["select-tool"] == app.C.Tool_pen,
+       "Alt+L bật đoạn thẳng bằng bút")
+ vk640ToggleLine()
+ check(state["tool-draw-line"] == true, "Alt+L chống auto-repeat")
+ fakeUp = fakeUp + 1
+ vk640ToggleLine()
+ check(state["tool-draw-line"] == false, "Alt+L lần hai trả về nét tự do")
+ fakeUp = fakeUp + 1
+ vk640ToggleLine()
+ vk640ToggleArrow()
+ check(state["tool-draw-arrow"] == true and state["tool-draw-line"] == false,
+       "Alt+V chuyển trực tiếp đoạn thẳng sang mũi tên")
+ fakeUp = fakeUp + 1
+ vk640ToggleArrow()
+ check(state["tool-draw-arrow"] == false, "Alt+V lần hai trả về nét tự do")
+ for cycles, callback in ipairs({vk640SineOne, vk640SineTwo}) do
+  fakeUp = fakeUp + 1
+  callback()
+  local batch = batches[#batches]
+  local wave = batch.strokes[1]
+  check(#batch.strokes == 1 and #wave.x == 128*cycles+1 and #wave.x == #wave.y,
+        "sóng sin: đúng một nét mượt 128 đoạn/chu kỳ")
+  local exact, fits, monotonic = true, true, true
+  for i = 1, #wave.x do
+   local expected = 320 - 50*math.sin(2*math.pi*cycles*(wave.x[i]-120)/360)
+   exact = exact and math.abs(wave.y[i] - expected) < 1e-8
+   fits = fits and wave.x[i] >= 0 and wave.x[i] <= 600 and wave.y[i] >= 0 and wave.y[i] <= 800
+   if i > 1 then monotonic = monotonic and wave.x[i] > wave.x[i-1] end
+  end
+  check(exact and monotonic, "sóng sin: mọi mẫu đúng A sin(omega x), x tăng đều")
+  check(fits and wave.fill == -1 and wave.tool == "pen", "sóng sin: vừa trang, không tô kín")
+  check(selected[1] == "wave-ref" and cleared == cycles and batch.allowUndoRedoAction == "grouped"
+        and state["select-tool"] == app.C.Tool_selectRect,
+        "sóng sin: chọn riêng nét mới, một bước hoàn tác")
+  local count = #batches
+  callback()
+  check(#batches == count, "sóng sin chống chèn lặp khi giữ phím")
+ end
+ doc = {{ pageWidth = 100, pageHeight = 100 }}
+ fakeUp = fakeUp + 1
+ vk640SineTwo()
+ local wave = batches[#batches].strokes[1]
+ check(wave.x[1] == 15 and wave.x[#wave.x] == 85,
+       "sóng sin tự co vừa trang nhỏ")
+ doc = {{ pageWidth = 600, pageHeight = 800 }}
+ app.getVisiblePageRect = function() return { x = 200, y = 400, width = 100, height = 150 } end
+ fakeUp = fakeUp + 1
+ vk640SineOne()
+ wave = batches[#batches].strokes[1]
+ local fitsViewport = true
+ for i = 1, #wave.x do
+  fitsViewport = fitsViewport and wave.x[i] >= 200 and wave.x[i] <= 300 and wave.y[i] >= 400 and wave.y[i] <= 550
+ end
+ check(fitsViewport and wave.x[1] == 215 and wave.x[#wave.x] == 285,
+       "sóng sin luôn vừa vùng đang nhìn khi zoom/cuộn sâu trong trang")
+ app.getVisiblePageRect = function() return nil end
+ fakeUp = fakeUp + 1
+ vk640SineOne()
+ wave = batches[#batches].strokes[1]
+ check(wave.x[1] == 120 and wave.x[#wave.x] == 480,
+       "không có vùng nhìn: quay về khung trang an toàn")
+ doc = {}
+ fakeUp = fakeUp + 1
+ local count = #batches
+ vk640SineOne()
+ check(#batches == count, "không có trang: không chèn sóng")
+ vk640ShortcutHelp()
+ local help = dialogs[#dialogs].msg
+ check(help:find("Alt + C", 1, true) and help:find("Alt + S", 1, true) and help:find("Oxyz", 1, true),
+       "F1 có phím màu, sóng sin và hệ trục 3D")
+ local seenKeys, unique = {}, true
+ for _, ui in ipairs(registered) do
+  if ui.accelerator then
+   local key = normalizeAccel(ui.accelerator)
+   unique = unique and not seenKeys[key]
+   seenKeys[key] = true
+  end
+ end
+ check(unique, "các phím plugin không trùng nhau sau chuẩn hoá")
+end
+
+do
+ doc = docOf(1, 1, 0)
+ newApp(true, true)
+ local visible, calls, columnChanges = false, 0, 0
+ app.showToolbarShortcuts = function() visible = not visible; calls = calls + 1; return visible end
+ app.changeActionState = function(name, value)
+  if name == "set-columns-or-rows" then columnChanges = columnChanges + 1 end
+ end
+ fakeUp = fakeUp + 1
+ vk640ToggleShortcutHints()
+ check(visible and calls == 1 and columnChanges == 0,
+       "Ctrl+`: hiện chữ phím tắt, không thay bố cục/trang")
+ vk640ToggleShortcutHints()
+ check(calls == 1, "Ctrl+`: chống auto-repeat")
+ fakeUp = fakeUp + 1
+ vk640ToggleShortcutHints()
+ check(not visible and calls == 2, "Ctrl+` lần hai: ẩn chữ, thanh công cụ gọn lại")
+ fakeUp = fakeUp + 1
+ vk640ToggleColumns()
+ check(columnChanges == 1 and calls == 2, "Alt+`: vẫn đổi cột độc lập với chữ phím tắt")
+ app.showToolbarShortcuts = nil
+ fakeUp = fakeUp + 1
+ vk640ToggleShortcutHints()
+ check(dialogs[#dialogs].err == true, "bản cũ thiếu API: hướng dẫn mở lại bản custom")
+ vk640ShortcutHelp()
+ check(dialogs[#dialogs].msg:find("Ctrl + `", 1, true) and dialogs[#dialogs].msg:find("Alt + `", 1, true),
+       "F1 giải thích cả phím hiện chữ và phím đổi cột mới")
 end
 
 -- ================================================================ 10. bảng đăng ký đã xác nhận

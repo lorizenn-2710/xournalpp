@@ -137,6 +137,13 @@ public:
     [[nodiscard]] Point snapWithElements(Point const& pos, Point const& center, bool alt, bool latch = true) const;
 
     /**
+     * @brief Snap to the anchor points of the elements already on the page, falling back to grid
+     *        snapping only (no rotation snapping — used by area shapes like rectangle/triangle/box/pyramid/ellipse).
+     */
+    [[nodiscard]] Point snapToGridWithElements(Point const& pos, bool alt, bool latch = true,
+                                               std::optional<Point> exclude = std::nullopt) const;
+
+    /**
      * @brief Snap a single point to the elements of the page, without grid or rotation snapping
      * @param latch whether the snapper may hold on to the grabbed anchor
      */

@@ -12,6 +12,7 @@
 #pragma once
 
 #include <memory>
+#include <mutex>
 #include <string>  // for string
 
 #include <cairo.h>    // for cairo_surface_t, cairo_status_t
@@ -57,6 +58,11 @@ public:
      */
     PopplerDocument* getPdf() const;
 
+    // Document readers (display/export) may run in parallel. Poppler's Cairo
+    // output device belongs to the PDF, so hold this for the entire render.
+    std::unique_lock<std::mutex> lockRenderSource() const;
+
+
     // text tag to alow latex
     void setText(std::string text);
     std::string getText() const;
@@ -89,6 +95,7 @@ private:
      * Tex PDF Document, if rendered as PDF
      */
     xoj::util::GObjectSPtr<PopplerDocument> pdf;
+    mutable std::mutex renderMutex;
 
     /**
      * Tex image, if rendered as image. Note: this is deprecated and subject to removal in a later version.

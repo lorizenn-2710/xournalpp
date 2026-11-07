@@ -25,6 +25,12 @@
 
 using std::string;
 
+struct ClipboardHandler::Request {
+    std::weak_ptr<bool> alive;
+    ClipboardHandler* handler;
+    std::function<bool()> targetValid;
+};
+
 ClipboardListener::~ClipboardListener() = default;
 
 ClipboardHandler::ClipboardHandler(ClipboardListener* listener, GtkWidget* widget) {
@@ -36,33 +42,33 @@ ClipboardHandler::ClipboardHandler(ClipboardListener* listener, GtkWidget* widge
     this->listener->clipboardCutCopyEnabled(false);
 
     gtk_clipboard_request_contents(clipboard, gdk_atom_intern_static_string("TARGETS"),
-                                   reinterpret_cast<GtkClipboardReceivedFunc>(receivedClipboardContents), this);
+                                   reinterpret_cast<GtkClipboardReceivedFunc>(receivedClipboardContents), new Request{alive,this,{}});
 }
 
-ClipboardHandler::~ClipboardHandler() { g_signal_handler_disconnect(this->clipboard, this->handlerId); }
+ClipboardHandler::~ClipboardHandler() { alive.reset(); g_signal_handler_disconnect(this->clipboard, this->handlerId); }
 
 static GdkAtom atomXournal = gdk_atom_intern_static_string("application/xournal");
 
-auto ClipboardHandler::paste() -> bool {
+auto ClipboardHandler::paste(std::function<bool()> targetValid) -> bool {
     /* Request targets again, since the owner-change signal is not emitted on MacOS and under X11 with no XFIXES
      * extension. See https://docs.gtk.org/gdk3/struct.EventOwnerChange.html and
      * https://gitlab.gnome.org/GNOME/gtk/-/issues/1757 */
     gtk_clipboard_request_contents(clipboard, gdk_atom_intern_static_string("TARGETS"),
-                                   reinterpret_cast<GtkClipboardReceivedFunc>(receivedClipboardContents), this);
+                                   reinterpret_cast<GtkClipboardReceivedFunc>(receivedClipboardContents), new Request{alive,this,{}});
 
     if (this->containsXournal) {
         gtk_clipboard_request_contents(this->clipboard, atomXournal,
-                                       reinterpret_cast<GtkClipboardReceivedFunc>(pasteClipboardContents), this);
+                                       reinterpret_cast<GtkClipboardReceivedFunc>(pasteClipboardContents), new Request{alive,this,std::move(targetValid)});
         return true;
     }
     if (this->containsText) {
         gtk_clipboard_request_text(this->clipboard, reinterpret_cast<GtkClipboardTextReceivedFunc>(pasteClipboardText),
-                                   this);
+                                   new Request{alive,this,std::move(targetValid)});
         return true;
     }
     if (this->containsImage) {
         gtk_clipboard_request_image(this->clipboard,
-                                    reinterpret_cast<GtkClipboardImageReceivedFunc>(pasteClipboardImage), this);
+                                    reinterpret_cast<GtkClipboardImageReceivedFunc>(pasteClipboardImage), new Request{alive,this,std::move(targetValid)});
         return true;
     }
 
@@ -266,10 +272,14 @@ void ClipboardHandler::ownerChangedCallback(GtkClipboard* clip, GdkEvent* event,
 
 void ClipboardHandler::clipboardUpdated(GdkAtom atom) {
     gtk_clipboard_request_contents(clipboard, gdk_atom_intern_static_string("TARGETS"),
-                                   reinterpret_cast<GtkClipboardReceivedFunc>(receivedClipboardContents), this);
+                                   reinterpret_cast<GtkClipboardReceivedFunc>(receivedClipboardContents), new Request{alive,this,{}});
 }
 
-void ClipboardHandler::pasteClipboardImage(GtkClipboard* clipboard, GdkPixbuf* pixbuf, ClipboardHandler* handler) {
+void ClipboardHandler::pasteClipboardImage(GtkClipboard* clipboard, GdkPixbuf* pixbuf, Request* rawRequest) {
+    std::unique_ptr<Request> request(rawRequest);
+    if (request->alive.expired() || (request->targetValid && !request->targetValid())) return;
+    auto* handler = request->handler;
+
     if (pixbuf) {
         handler->listener->clipboardPasteImage(pixbuf);
     } else {
@@ -278,7 +288,11 @@ void ClipboardHandler::pasteClipboardImage(GtkClipboard* clipboard, GdkPixbuf* p
 }
 
 void ClipboardHandler::pasteClipboardContents(GtkClipboard* clipboard, GtkSelectionData* selectionData,
-                                              ClipboardHandler* handler) {
+                                              Request* rawRequest) {
+    std::unique_ptr<Request> request(rawRequest);
+    if (request->alive.expired() || (request->targetValid && !request->targetValid())) return;
+    auto* handler = request->handler;
+
     ObjectInputStream in;
 
     if (in.read(reinterpret_cast<const char*>(gtk_selection_data_get_data(selectionData)),
@@ -287,7 +301,11 @@ void ClipboardHandler::pasteClipboardContents(GtkClipboard* clipboard, GtkSelect
     }
 }
 
-void ClipboardHandler::pasteClipboardText(GtkClipboard* clipboard, const gchar* text, ClipboardHandler* handler) {
+void ClipboardHandler::pasteClipboardText(GtkClipboard* clipboard, const gchar* text, Request* rawRequest) {
+    std::unique_ptr<Request> request(rawRequest);
+    if (request->alive.expired() || (request->targetValid && !request->targetValid())) return;
+    auto* handler = request->handler;
+
     if (text) {
         handler->listener->clipboardPasteText(text);
     }
@@ -312,7 +330,11 @@ auto gtk_selection_data_targets_include_xournal(GtkSelectionData* selection_data
 }
 
 void ClipboardHandler::receivedClipboardContents(GtkClipboard* clipboard, GtkSelectionData* selectionData,
-                                                 ClipboardHandler* handler) {
+                                                 Request* rawRequest) {
+    std::unique_ptr<Request> request(rawRequest);
+    if (request->alive.expired() || (request->targetValid && !request->targetValid())) return;
+    auto* handler = request->handler;
+
     handler->containsText = gtk_selection_data_targets_include_text(selectionData);
     handler->containsXournal = gtk_selection_data_targets_include_xournal(selectionData);
     handler->containsImage = gtk_selection_data_targets_include_image(selectionData, false);

@@ -58,6 +58,8 @@ public:
 
 public:
     void freeDynamicToolbarItems();
+    void setShortcutHintsVisible(bool visible);
+    bool getShortcutHintsVisible() const;
     static void unloadToolbar(GtkWidget* toolbar);
 
     /**
@@ -116,6 +118,7 @@ private:
     void initEraserToolItem();
 
 private:
+    bool shortcutHintsVisible = false;
     std::vector<std::unique_ptr<ColorToolItem>> toolbarColorItems;
     GtkWindow* parent = nullptr;
 

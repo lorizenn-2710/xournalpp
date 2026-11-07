@@ -67,7 +67,7 @@ auto BaseShapeHandler::getDrawHiddenEdges() const -> bool {
     // A dashed line only means "you cannot see this edge" when the rest of the figure is solid.
     // If the user is drawing with a dashed pen, dashing the hidden edges too would say nothing, so
     // the figure is then drawn with the plain pen style throughout.
-    return !this->stroke->getLineStyle().hasDashes();
+    return this->stroke && !this->stroke->getLineStyle().hasDashes();
 }
 
 auto BaseShapeHandler::onKeyEvent(const KeyEvent& event, bool pressed) -> bool {
@@ -160,7 +160,7 @@ void BaseShapeHandler::onButtonReleaseEvent(const PositionInputData& pos, double
             auto dashed = std::make_unique<Stroke>();
             dashed->setColor(color);
             dashed->setWidth(width);
-            dashed->setFill(ptr->getFill());
+            dashed->setFill(-1);
             dashed->setToolType(ptr->getToolType());
             dashed->setLineStyle(style);
             dashed->setPointVector(part, nullptr);
@@ -191,10 +191,9 @@ void BaseShapeHandler::onButtonPressEvent(const PositionInputData& pos, double z
     // A new gesture starts: forget the anchor the previous one may have held
     this->snappingHandler.resetElementSnapper();
 
-    // Magnet snapping on the first point as well, so a shape can be started exactly on an
-    // existing end point or corner.
-    this->startPoint = this->snappingHandler.snapWithElements(this->buttonDownPoint, this->buttonDownPoint,
-                                                              pos.isAltDown());
+    // Magnet snapping on the first point as well (one-shot, latch=false), so a shape can be started
+    // exactly on an existing end point or corner without locking the latch onto startPoint.
+    this->startPoint = this->snappingHandler.snapToGridWithElements(this->buttonDownPoint, pos.isAltDown(), false);
     this->currPoint = this->startPoint;
 
     this->stroke = createStroke(this->control);

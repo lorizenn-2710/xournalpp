@@ -23,17 +23,13 @@ void TexImage::freeImageAndPdf() {
 }
 
 auto TexImage::cloneTexImage() const -> std::unique_ptr<TexImage> {
+    auto sourceLock = lockRenderSource();
     auto img = std::make_unique<TexImage>();
     static_cast<RectangularElement&>(*img) = *this;
 
     img->text = this->text;
 
-    // Clone has a copy of our PDF.
-    img->pdf = this->pdf;
-
-    // Load a copy of our data (must be called after
-    // giving the clone a copy of our PDF -- it may change
-    // the PDF we've given it).
+    // Each clone loads an independent PDF and owns its render lock.
     img->loadData(std::string(this->binaryData), nullptr);
 
     return img;
@@ -42,6 +38,7 @@ auto TexImage::cloneTexImage() const -> std::unique_ptr<TexImage> {
 auto TexImage::clone() const -> ElementPtr { return cloneTexImage(); }
 
 auto TexImage::getNativeSize() const -> xoj::util::Size<double> {
+    auto sourceLock = lockRenderSource();
     if (pdf) {
         if (poppler_document_get_n_pages(pdf.get()) < 1) {
             g_warning("Got latex PDF without pages!: %s", this->getText().c_str());
@@ -52,6 +49,7 @@ auto TexImage::getNativeSize() const -> xoj::util::Size<double> {
 
         xoj::util::Size<double> res{0, 0};
         poppler_page_get_size(page, &res.width, &res.height);
+        g_object_unref(page);
         return res;
     }
     if (image) {
@@ -83,16 +81,18 @@ void TexImage::setText(std::string text) { this->text = std::move(text); }
 auto TexImage::getText() const -> std::string { return this->text; }
 
 auto TexImage::loadData(std::string&& bytes, GError** err) -> bool {
+    auto sourceLock = lockRenderSource();
     this->freeImageAndPdf();
-    this->binaryData = bytes;
+    this->binaryData = std::move(bytes);
     if (this->binaryData.length() < 4) {
         return false;
     }
 
     const std::string type = binaryData.substr(1, 3);
     if (type == "PDF") {
-        // Note: binaryData must not be modified while pdf is live.
-        auto* bytes = g_bytes_new_with_free_func(this->binaryData.data(), this->binaryData.size(), nullptr, nullptr);
+        // A referenced PDF can outlive the TexImage (e.g. the LaTeX preview).
+        // Give Poppler owned bytes instead of a pointer into this string.
+        auto* bytes = g_bytes_new(this->binaryData.data(), this->binaryData.size());
         this->pdf.reset(poppler_document_new_from_bytes(bytes, nullptr, err), xoj::util::adopt);
         g_bytes_unref(bytes);
 
@@ -113,6 +113,8 @@ auto TexImage::loadData(std::string&& bytes, GError** err) -> bool {
 auto TexImage::getImage() const -> cairo_surface_t* { return this->image.get(); }
 
 auto TexImage::getPdf() const -> PopplerDocument* { return this->pdf.get(); }
+
+auto TexImage::lockRenderSource() const -> std::unique_lock<std::mutex> { return std::unique_lock(renderMutex); }
 
 void TexImage::serialize(ObjectOutputStream& out) const {
     out.writeObject("TexImage");

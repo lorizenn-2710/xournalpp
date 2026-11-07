@@ -163,7 +163,7 @@ auto SplineHandler::onMotionNotifyEvent(const PositionInputData& pos, double zoo
                 return true;
             }
         } else {
-            this->currPoint = snappingHandler.snap(this->buttonDownPoint, knots.back(), pos.isAltDown());
+            this->currPoint = snappingHandler.snapWithElements(this->buttonDownPoint, knots.back(), pos.isAltDown());
         }
         this->inFirstKnotAttractionZone = nowInAttractionZone;
     }
@@ -215,12 +215,12 @@ void SplineHandler::onButtonPressEvent(const PositionInputData& pos, double zoom
         stroke = createStroke(this->control);
         xoj_assert(this->knots.empty() && this->tangents.empty());
         this->buttonDownPoint = Point(pos.x / zoom, pos.y / zoom);
-        this->currPoint = snappingHandler.snapToGrid(this->buttonDownPoint, pos.isAltDown());
+        this->currPoint = snappingHandler.snapToGridWithElements(this->buttonDownPoint, pos.isAltDown(), false);
         this->addKnot(this->currPoint);
     } else {
         xoj_assert(!this->knots.empty());
         this->buttonDownPoint = Point(pos.x / zoom, pos.y / zoom);
-        this->currPoint = snappingHandler.snap(this->buttonDownPoint, knots.back(), pos.isAltDown());
+        this->currPoint = snappingHandler.snapWithElements(this->buttonDownPoint, knots.back(), pos.isAltDown());
         double dist = this->buttonDownPoint.lineLengthTo(this->knots.front());
         if (dist < this->knotsAttractionRadius) {  // now the spline is closed and finalized
             this->addKnotWithTangent(this->knots.front(), this->tangents.front());
@@ -246,6 +246,7 @@ void SplineHandler::movePoint(double dx, double dy) {
 }
 
 void SplineHandler::clearTinySpline() {
+    this->snappingHandler.resetElementSnapper();
     auto rg = this->computeLastSegmentRepaintRange();
     // Clearing the knots ensures the view will not draw anything (thus the repainting will erase everything)
     this->knots.clear();
@@ -257,6 +258,7 @@ void SplineHandler::clearTinySpline() {
 
 void SplineHandler::finalizeSpline() {
     xoj_assert(this->stroke);
+    this->snappingHandler.resetElementSnapper();
 
     auto optData = getData();
     xoj_assert(optData);

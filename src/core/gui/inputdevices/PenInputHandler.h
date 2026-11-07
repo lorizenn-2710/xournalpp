@@ -74,6 +74,10 @@ protected:
      * Flag whether pen is within the widget
      */
     bool penInWidget = false;
+    guint scrollIdleSource = 0;
+    guint outsideScrollSource = 0;
+    xoj::util::Point<double> outsideScrollOffset{0., 0.};
+    void stopDeferredScrolling();
 
     /**
      * Page a selection started at as we require this for motion updates
@@ -90,6 +94,7 @@ protected:
 public:
     explicit PenInputHandler(InputContext* inputContext);
     ~PenInputHandler() override;
+    void finishSequence();
 
 protected:
     /**

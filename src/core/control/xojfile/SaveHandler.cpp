@@ -80,6 +80,12 @@ void SaveHandler::prepareSave(const Document* doc, const fs::path& target) {
         PageRef p = doc->getPage(i);
         visitPage(root.get(), p, doc, static_cast<int>(i), target);
     }
+    // Real native page payloads. Older readers show them as ordinary pages;
+    // they preserve ink, but discard our view/role metadata on saving.
+    for (const auto& p : doc->floatingNotes) {
+        p->getBackgroundImage().clearSaveState();
+        visitPage(root.get(), p, doc, -1, target);
+    }
 }
 
 void SaveHandler::writeHeader() {
@@ -288,6 +294,21 @@ void SaveHandler::visitPage(XmlNode* root, ConstPageRef p, const Document* doc, 
     root->addChild(page);
     page->setAttrib(xoj::xml_attrs::WIDTH_STR, p->getWidth());
     page->setAttrib(xoj::xml_attrs::HEIGHT_STR, p->getHeight());
+    page->setAttrib(u8"stable-id", p->stableId);
+    if (p->floatingNote) {
+        const auto& n = *p->floatingNote;
+        page->setAttrib(u8"scratch-version", 1);
+        page->setAttrib(u8"scratch-name", n.name);
+        page->setAttrib(u8"scratch-source", n.sourceId);
+        page->setAttrib(u8"scratch-x", n.x); page->setAttrib(u8"scratch-y", n.y);
+        page->setAttrib(u8"scratch-width", n.width); page->setAttrib(u8"scratch-height", n.height);
+        page->setAttrib(u8"scratch-zoom", n.zoom);
+        page->setAttrib(u8"scratch-scroll-x", n.scrollX); page->setAttrib(u8"scratch-scroll-y", n.scrollY);
+        page->setAttrib(u8"scratch-open", int(n.open)); page->setAttrib(u8"scratch-pinned", int(n.pinned));
+        page->setAttrib(u8"scratch-deleted", int(n.deleted));
+        page->setAttrib(u8"scratch-z", n.zOrder);
+        page->setAttrib(u8"scratch-created", n.created); page->setAttrib(u8"scratch-modified", n.modified);
+    }
 
     auto* background = new XmlNode(TAG_NAMES[TagType::BACKGROUND]);
     page->addChild(background);
@@ -400,20 +421,25 @@ void SaveHandler::writeBackgroundName(XmlNode* background, ConstPageRef p) {
 }
 
 void SaveHandler::saveTo(const fs::path& filepath, ProgressListener* listener) {
-    GzOutputStream out(filepath);
-
-    if (!out.getLastError().empty()) {
-        this->errorMessage = out.getLastError();
-        return;
+    // Commit only a fully closed gzip stream. Failure leaves the previous target intact.
+    auto* uuid = g_uuid_string_random();
+    fs::path temporary = filepath;
+    temporary += std::string(".part-") + uuid;
+    g_free(uuid);
+    {
+        GzOutputStream out(temporary);
+        errorMessage = out.getLastError();
+        if (errorMessage.empty()) saveTo(&out, filepath, listener);
+        out.close();
+        if (errorMessage.empty()) errorMessage = out.getLastError();
     }
-
-    saveTo(&out, filepath, listener);
-
-    out.close();
-
-    if (this->errorMessage.empty()) {
-        this->errorMessage = out.getLastError();
+    std::error_code ec;
+    if (errorMessage.empty()) {
+        fs::rename(temporary, filepath, ec);
+        if (ec) errorMessage = ec.message();
     }
+    if (!errorMessage.empty()) fs::remove(temporary, ec);
+
 }
 
 void SaveHandler::saveTo(OutputStream* out, const fs::path& filepath, ProgressListener* listener) {

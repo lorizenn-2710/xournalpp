@@ -40,6 +40,10 @@ auto CompassInputHandler::handlePointer(InputEvent const& event) -> bool {
                            std::abs(compassController->posRelToSide(coords.x, coords.y).x - 0.5 * h) <= 0.5 * h) {
                     compassController->createRadialStroke(std::hypot(p.x, p.y));
                     return true;
+                } else if (controller->isInsideGeometryTool(coords.x, coords.y, 0.)) {
+                    sequenceStart(event);
+                    this->handScrolling = true;
+                    return true;
                 }
                 return false;
             } else if (event.type == MOTION_EVENT) {
@@ -52,6 +56,10 @@ auto CompassInputHandler::handlePointer(InputEvent const& event) -> bool {
                     return true;
                 } else if (compassController->existsRadialStroke()) {
                     compassController->updateRadialStroke(std::hypot(p.x, p.y));
+                    return true;
+                } else if (this->handScrolling) {
+                    scrollMotion(event);
+                    return true;
                 }
                 return false;
             } else if (event.type == BUTTON_RELEASE_EVENT) {
@@ -62,6 +70,9 @@ auto CompassInputHandler::handlePointer(InputEvent const& event) -> bool {
                     return true;
                 } else if (compassController->existsRadialStroke()) {
                     compassController->finalizeRadialStroke();
+                    return true;
+                } else if (this->handScrolling) {
+                    this->handScrolling = false;
                     return true;
                 }
             }
@@ -80,6 +91,7 @@ auto CompassInputHandler::handlePointer(InputEvent const& event) -> bool {
                 return true;
             } else if (event.type == BUTTON_RELEASE_EVENT && this->handScrolling) {
                 this->handScrolling = false;
+                return true;
             }
         default:
             return false;

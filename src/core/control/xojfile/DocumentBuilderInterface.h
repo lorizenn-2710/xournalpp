@@ -44,6 +44,8 @@ public:
     virtual void finalizeDocument() = 0;
     virtual void addPage(double width, double height) = 0;
     virtual void finalizePage() = 0;
+    virtual void setPageIdentity(std::string id) {}
+    virtual void setFloatingNote(const struct FloatingNoteState& state) {}
     virtual void addAudioAttachment(const fs::path& filename) = 0;
     virtual void setBgName(const std::string& name) = 0;
     virtual void setBgSolid(const PageType& bg, Color color) = 0;

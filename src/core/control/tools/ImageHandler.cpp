@@ -85,11 +85,8 @@ auto ImageHandler::createImageFromFile(const fs::path& p) -> std::unique_ptr<Ima
 bool ImageHandler::addImageToDocument(std::unique_ptr<Image> img, PageRef page, Control* control, bool addUndoAction) {
     Layer* layer = page->getSelectedLayer();
 
-    if (addUndoAction) {
-        control->getUndoRedoHandler()->addUndoAction(std::make_unique<InsertUndoAction>(page, layer, img.get()));
-    }
 
-    XournalView* xournal = control->getWindow()->getXournal();
+    XournalView* xournal = control->getEditingView();
     auto pageNr = xournal->getCurrentPage();
     auto* view = xournal->getViewFor(pageNr);
 
@@ -98,8 +95,12 @@ bool ImageHandler::addImageToDocument(std::unique_ptr<Image> img, PageRef page, 
         return false;
     }
 
+    if (addUndoAction) {
+        control->getUndoRedoHandler()->addUndoAction(std::make_unique<InsertUndoAction>(page, layer, img.get()));
+    }
+
     auto sel = SelectionFactory::createFromFloatingElement(control, page, layer, view, std::move(img));
-    control->getWindow()->getXournal()->setSelection(sel.release());
+    control->getEditingView()->setSelection(sel.release());
     return true;
 }
 

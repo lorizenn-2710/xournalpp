@@ -263,7 +263,7 @@ void LatexController::insertTexImage() {
 
     auto lock = std::shared_lock(*doc);
     Layer* layer = page->getSelectedLayer();
-    XournalView* xournal = this->control->getWindow()->getXournal();
+    XournalView* xournal = this->control->getEditingView();
     auto pageNr = xournal->getCurrentPage();
     auto* view = xournal->getViewFor(pageNr);
 

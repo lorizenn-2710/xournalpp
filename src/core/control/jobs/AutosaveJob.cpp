@@ -25,19 +25,22 @@ void AutosaveJob::afterRun() {
 void AutosaveJob::run() {
     SaveHandler handler;
 
-    control->getUndoRedoHandler()->documentAutosaved();
+    auto savedState = control->getUndoRedoHandler()->snapshotState();
 
     Document* doc = control->getDocument();
 
     doc->lock_shared();
     auto filepath = doc->getFilepath();
+    const auto recoveryId = doc->recoveryId;
 
     if (filepath.empty()) {
-        filepath = Util::getAutosaveFilepath();
+        filepath = Util::getAutosaveFilepath().parent_path() / (recoveryId + ".xopp");
     } else {
         filepath.replace_filename(fs::path(".") += filepath.filename());
     }
+    const bool namedNotebook = !doc->getFilepath().empty() && !doc->floatingNotes.empty();
     Util::clearExtensions(filepath);
+    if (namedNotebook) filepath += "." + recoveryId;
     filepath += ".autosave.xopp";
 
     handler.prepareSave(doc, filepath);
@@ -45,34 +48,22 @@ void AutosaveJob::run() {
 
     g_message("%s", FS(_F("Autosaving to {1}") % filepath.string()).c_str());
 
-    fs::path tempfile = filepath;
-    tempfile += u8"~";
-    handler.saveTo(tempfile);
-
-    doc->lock();
-    handler.updateDocumentInfo(doc);
-    doc->unlock();
-
+    // SaveHandler closes the gzip stream and atomically replaces this path.
+    // There is no intermediate window in which a valid recovery is moved away.
+    handler.saveTo(filepath);
     this->error = handler.getErrorMessage();
     if (!this->error.empty()) {
         callAfterRun();
-    } else {
-        try {
-            if (fs::exists(filepath)) {
-                fs::path swaptmpfile = filepath;
-                swaptmpfile += u8".swap";
-                Util::safeRenameFile(filepath, swaptmpfile);
-                Util::safeRenameFile(tempfile, filepath);
-                // All went well, we can delete the old autosave file
-                fs::remove(swaptmpfile);
-            } else {
-                Util::safeRenameFile(tempfile, filepath);
-            }
-            control->setLastAutosaveFile(filepath);
-        } catch (const fs::filesystem_error& e) {
-            auto fmtstr = _F("Could not rename autosave file from \"{1}\" to \"{2}\": {3}");
-            this->error = FS(fmtstr % tempfile.u8string() % filepath.u8string() % e.what());
-        }
+        return;
+    }
+
+    doc->lock();
+    const bool sameDocument = doc->recoveryId == recoveryId;
+    if (sameDocument) handler.updateDocumentInfo(doc);
+    doc->unlock();
+    if (sameDocument) {
+        control->setLastAutosaveFile(filepath);
+        control->getUndoRedoHandler()->documentAutosaved(std::move(savedState));
     }
 }
 

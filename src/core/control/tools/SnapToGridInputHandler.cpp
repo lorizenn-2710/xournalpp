@@ -160,17 +160,25 @@ Point SnapToGridInputHandler::snapToElements(Point const& pos, bool alt, bool la
 }
 
 Point SnapToGridInputHandler::snapWithElements(Point const& pos, Point const& center, bool alt, bool latch) const {
-    // Grid and rotation snapping first: they are cheap and unconditional, so they give the
-    // element snapping a sensible candidate to fall back on.
-    const Point gridSnapped = snap(pos, center, alt);
-    const Point elementSnapped = this->elementSnapper.snap(gridSnapped, alt, latch);
-
-    // The snapper only returns a different point when it actually grabbed an anchor
-    if (elementSnapped != gridSnapped) {
+    // Check element snapping on the RAW position first so that rotation snapping (15° rays) or
+    // grid snapping cannot deflect the pen away from a real vertex/endpoint before the magnet sees it.
+    // When dragging (`latch == true`), ignore `center` (the start point of the gesture) so the
+    // dragged endpoint never latches onto its own start point.
+    const std::optional<Point> exclude = latch ? std::optional<Point>(center) : std::nullopt;
+    const Point elementSnapped = this->elementSnapper.snap(pos, alt, latch, exclude);
+    if (elementSnapped != pos || (latch && this->elementSnapper.getLatchedAnchor().has_value())) {
         return elementSnapped;
     }
-    // No anchor nearby: the grid/rotation result stands
-    return gridSnapped;
+    return snap(pos, center, alt);
+}
+
+Point SnapToGridInputHandler::snapToGridWithElements(Point const& pos, bool alt, bool latch,
+                                                     std::optional<Point> exclude) const {
+    const Point elementSnapped = this->elementSnapper.snap(pos, alt, latch, exclude);
+    if (elementSnapped != pos || (latch && this->elementSnapper.getLatchedAnchor().has_value())) {
+        return elementSnapped;
+    }
+    return snapToGrid(pos, alt);
 }
 
 auto SnapToGridInputHandler::getLatchedAnchor() const -> std::optional<Point> {

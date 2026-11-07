@@ -7,8 +7,8 @@
 # Chỉ đo trên mask = |ảnh_có_thước − ảnh_tắt_thước| nên không lẫn toolbar.
 set -u
 HERE=$(cd "$(dirname "$0")" && pwd)
-D=/tmp/xpp-pk
-rm -rf "$D"; mkdir -p "$D/run" "$D/cfg/xournalpp" "$D/data" "$D/shot"
+D=$(mktemp -d /tmp/xpp-pk.XXXXXX)
+mkdir -p "$D/run" "$D/cfg/xournalpp" "$D/data" "$D/shot"
 chmod 700 "$D/run"
 # Mượn settings.xml + toolbar.ini của máy (disableAudio=true): thiếu nó app SIGABRT
 # dưới Xvfb vì không có thiết bị âm thanh -> không có cửa sổ nào để bơm phím.
@@ -20,7 +20,7 @@ export XDG_RUNTIME_DIR=$D/run XDG_CONFIG_HOME=$D/cfg XDG_DATA_HOME=$D/data
 # (Fatal server error: already active) rồi mọi bước sau lặng lẽ sai.
 DISP=":$(( 100 + ($$ % 60) ))"
 export DISPLAY=$DISP
-APP=${APP:-/home/phuc/xpp-src/build/xournalpp-wrapper}
+APP=${APP:-/home/phuc/.local/bin/xournalpp}
 TW=${TW:-$HERE}
 Xvfb $DISP -screen 0 1500x1100x24 >"$D/xvfb.log" 2>&1 &
 XVFB=$!
@@ -32,14 +32,14 @@ set -u
 FIG=$(mktemp -d)
 "$APP" >"$D/app.log" 2>&1 &
 APPPID=$!
+trap 'kill "$APPPID" 2>/dev/null || true' EXIT
 sleep 2
 WINOBJ=/com/github/xournalpp/xournalpp/window/1
 NM=""
 for i in $(seq 1 160); do
     for nm in $(busctl --user list 2>/dev/null | awk '$3=="xournalpp"{print $1}'); do
         if gdbus call --session --dest "$nm" --object-path "$WINOBJ" \
-            --method org.freedesktop.DBus.Properties.Get \
-            com.github.xournalpp.xournalpp.Window visible >/dev/null 2>&1; then
+            --method org.gtk.Actions.DescribeAll >/dev/null 2>&1; then
             NM=$nm; break
         fi
     done
@@ -51,7 +51,7 @@ grab() { import -display "$DISPLAY" -window root "$D/shot/$1.png" 2>/dev/null; }
 
 grab 00-off
 gdbus call --session --dest "$NM" --object-path "$WINOBJ" \
-    --method com.github.xournalpp.xournalpp.Window.activateAction protractor \
+    --method org.gtk.Actions.Activate protractor '[]' '{}' \
     >>"$D/act.log" 2>&1
 sleep 1.2
 grab 01-on
@@ -67,10 +67,12 @@ kill $APPPID 2>/dev/null
 wait $APPPID 2>/dev/null
 EOS
 
-/usr/bin/python3 - "$D" <<'PY'
+/usr/bin/python3 - "$D" "$HERE" <<'PY'
 import sys, glob
 import numpy as np
 from PIL import Image
+sys.path.insert(0, sys.argv[2])
+from protractor_shape import largest_component
 
 D = sys.argv[1]
 def load(n):
@@ -82,7 +84,15 @@ def mask(n):
     return np.abs(a - off) > 40
 
 def stats(m):
-    ys, xs = np.nonzero(m)
+    # Ignore toolbar toggle icons and cursors: isolate the connected ruler outline,
+    # then include its interior tick marks and numbers in the measurement.
+    h, w = m.shape
+    n, x0, y0, x1, y1 = largest_component(bytearray(m.astype(np.uint8).tobytes()), w, h)
+    if not n:
+        return None
+    region = np.zeros_like(m)
+    region[y0:y1+1, x0:x1+1] = m[y0:y1+1, x0:x1+1]
+    ys, xs = np.nonzero(region)
     if len(xs) == 0:
         return None
     x0, x1, y0, y1 = xs.min(), xs.max(), ys.min(), ys.max()
@@ -109,9 +119,11 @@ if mv and b:
     dx, dy = mv["cx"] - b["cx"], mv["cy"] - b["cy"]
     check(dx < -8 and abs(dy) < 6, "Left x8 dịch sang trái",
           f"dx={dx:.1f}px dy={dy:.1f}px (8 phím × 0.25 cm = 2 cm)")
-    check(abs(mv["area"] - b["area"]) / b["area"] < 0.06,
+    # Fractional-pixel translation changes thresholded ink coverage through antialiasing.
+    # Width/height are the geometric invariant; allow only the 1-2px raster boundary.
+    check(abs(mv["w"] - b["w"]) <= 2 and abs(mv["h"] - b["h"]) <= 2,
           "dịch chuyển không đổi kích thước",
-          f"area {b['area']} -> {mv['area']}")
+          f"bbox {b['w']}x{b['h']} -> {mv['w']}x{mv['h']}")
 
 if rot and mv:
     r_now, r_before = rot["h"] / rot["w"], mv["h"] / mv["w"]
@@ -127,4 +139,5 @@ if scl and rot:
           f"cạnh dài {rot['h']}px -> {scl['h']}px = ×{lin:.3f}")
 
 print("KẾT LUẬN:", "FAIL " + ",".join(fails) if fails else "PASS")
+sys.exit(1 if fails else 0)
 PY

@@ -1,0 +1,104 @@
+{
+  "quadratic": {
+    "domain": "R"
+  },
+  "cubic": {
+    "domain": "R",
+    "extrema": [
+      [
+        -1,
+        2
+      ],
+      [
+        1,
+        -2
+      ]
+    ]
+  },
+  "minus-square": {
+    "domain": "R"
+  },
+  "square-minus": {
+    "domain": "R"
+  },
+  "trig": {
+    "domain": "R",
+    "angle": "radian"
+  },
+  "exponential": {
+    "domain": "R"
+  },
+  "absolute": {
+    "domain": "R"
+  },
+  "parameter": {
+    "domain": "R",
+    "m": 1
+  },
+  "reciprocal": {
+    "domain": "R except listed points",
+    "excluded": [
+      0
+    ]
+  },
+  "hole": {
+    "domain": "R except listed points",
+    "excluded": [
+      1
+    ],
+    "holes": [
+      [
+        1,
+        2
+      ]
+    ]
+  },
+  "pole": {
+    "domain": "R except listed points",
+    "excluded": [
+      1
+    ],
+    "asymptotes": [
+      "x=1",
+      "y=x+1"
+    ]
+  },
+  "frac-scope": {
+    "domain": "R except listed points",
+    "excluded": [
+      -1
+    ]
+  },
+  "sum-scope": {
+    "domain": "R except listed points",
+    "excluded": [
+      0
+    ]
+  },
+  "negative-power": {
+    "domain": "R except listed points",
+    "excluded": [
+      0
+    ]
+  },
+  "nested": {
+    "domain": "R except listed points",
+    "excluded": [
+      -1,
+      0
+    ]
+  },
+  "root-scope": {
+    "domain": "x >= -1"
+  },
+  "root-sum": {
+    "domain": "x >= 0"
+  },
+  "log": {
+    "domain": "x > 0"
+  },
+  "implicit": {
+    "supported": false,
+    "reason": "implicit equation, no y=f(x) branch chosen"
+  }
+}

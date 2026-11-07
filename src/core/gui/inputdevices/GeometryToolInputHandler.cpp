@@ -211,19 +211,43 @@ void GeometryToolInputHandler::sequenceStart(InputEvent const& event) {
 
 void GeometryToolInputHandler::scrollMotion(InputEvent const& event) {
     // Will only be called if there is a single sequence (rotation/zooming handles two sequences)
+    xoj::util::Point<double> prevCoords;
+    xoj::util::Point<double> coords = this->getCoords(event);
     auto offset = [&]() {
-        xoj::util::Point<double> coords = this->getCoords(event);
         if (event.sequence == this->primarySequence) {
+            prevCoords = this->priLastPageRel;
             const xoj::util::Point<double> offset = coords - this->priLastPageRel;
             this->priLastPageRel = coords;
             return offset;
         } else {
+            prevCoords = this->secLastPageRel;
             const xoj::util::Point<double> offset = coords - this->secLastPageRel;
             this->secLastPageRel = coords;
             return offset;
         }
     }();
     const auto& origin = controller->getGeometryTool()->getOrigin();
+    if (event.state & GDK_SHIFT_MASK) {
+        const xoj::util::Point<double> v0 = prevCoords - origin;
+        const xoj::util::Point<double> v1 = coords - origin;
+        if (std::hypot(v0.x, v0.y) > 1.0 && std::hypot(v1.x, v1.y) > 1.0) {
+            const double da = std::remainder(std::atan2(v1.y, v1.x) - std::atan2(v0.y, v0.x), 2.0 * M_PI);
+            controller->rotate(da, origin);
+        }
+        return;
+    }
+    if (event.state & GDK_CONTROL_MASK) {
+        const double d0 = std::hypot(prevCoords.x - origin.x, prevCoords.y - origin.y);
+        const double d1 = std::hypot(coords.x - origin.x, coords.y - origin.y);
+        if (d0 > 2.0 && d1 > 2.0) {
+            const double scaleFactor = d1 / d0;
+            const double h = controller->getGeometryTool()->getHeight() * scaleFactor;
+            if (h <= getMaxHeight() && h >= getMinHeight()) {
+                controller->scale(scaleFactor, origin);
+            }
+        }
+        return;
+    }
     const auto pos = Point(origin.x + offset.x, origin.y + offset.y);
     double minDist = SNAPPING_DISTANCE_TOLERANCE;
     double diffAngle{NAN};

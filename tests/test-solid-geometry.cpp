@@ -144,8 +144,7 @@ int main() {
         const std::size_t corner = commonVertex(w);
         check(corner == 7, "hướng mặc định (lên-phải): góc khuất là góc sau-dưới-trái (chỉ số 7)");
         const Point& p = w.vertices[corner];
-        check(std::abs(p.x - 167.5) < 1e-6 && std::abs(p.y - 182.5) < 1e-6,
-              "toạ độ góc khuất đúng (167.5, 182.5)");
+        check(std::abs(p.x - 167.5) < 1e-6 && std::abs(p.y - 182.5) < 1e-6, "toạ độ góc khuất đúng (167.5, 182.5)");
     }
 
     // Degenerate front face (no height): the figure is a line, no face has an area to judge, and
@@ -302,6 +301,112 @@ int main() {
         }
         std::snprintf(msg, sizeof(msg), "hình chóp: vẽ đủ cả 8 cạnh");
         check(coveredP.size() == 8, msg);
+
+        // Khi excludeHidden = true (chế độ vẽ thực tế: nét liền chỉ đi qua cạnh THẤY, cạnh khuất vẽ nét đứt riêng):
+        // Tập cạnh liền và tập cạnh đứt phải RỜI NHAU hoàn toàn (giao = rỗng) và hợp lại đủ 12 cạnh (hộp) / 8 cạnh
+        // (chóp).
+        for (const Case& c: cases) {
+            auto wb = SolidGeometry::boxWireframe(c.f1, c.f2, 0.45, 0.75, -0.75);
+            const auto visB = SolidGeometry::boxOutline(wb, true);
+            const auto hidB = SolidGeometry::hiddenEdgePolylines(wb);
+            std::set<std::tuple<double, double, double, double>> visSet, hidSet;
+            for (std::size_t i = 1; i < visB.size(); ++i) {
+                visSet.insert(edgeKey(visB[i - 1], visB[i]));
+            }
+            for (const auto& h: hidB) {
+                if (h.size() >= 2) {
+                    hidSet.insert(edgeKey(h[0], h[1]));
+                }
+            }
+            bool disjoint = true;
+            for (const auto& e: hidSet) {
+                if (visSet.count(e) != 0) {
+                    disjoint = false;
+                }
+            }
+            std::snprintf(msg, sizeof(msg), "%-30s -> nét liền (9 cạnh thấy) KHÔNG đè lên 3 cạnh nét đứt", c.label);
+            check(disjoint && visSet.size() == 9 && hidSet.size() == 3, msg);
+        }
+
+        {
+            const auto visP = SolidGeometry::pyramidOutline(wp, true);
+            const auto hidP = SolidGeometry::hiddenEdgePolylines(wp);
+            std::set<std::tuple<double, double, double, double>> visSet, hidSet;
+            for (std::size_t i = 1; i < visP.size(); ++i) {
+                visSet.insert(edgeKey(visP[i - 1], visP[i]));
+            }
+            for (const auto& h: hidP) {
+                if (h.size() >= 2) {
+                    hidSet.insert(edgeKey(h[0], h[1]));
+                }
+            }
+            bool disjoint = true;
+            for (const auto& e: hidSet) {
+                if (visSet.count(e) != 0) {
+                    disjoint = false;
+                }
+            }
+            check(disjoint && visSet.size() + hidSet.size() == 8,
+                  "hình chóp (excludeHidden=true): nét liền (5 cạnh thấy) KHÔNG đè lên 3 cạnh nét đứt");
+        }
+    }
+
+    // New textbook solids: topology, hidden edges and edge-only continuous walks.
+    for (double height: {60.0, 300.0, -300.0}) {
+        auto w = SolidGeometry::triangularPyramidWireframe({300, 400}, 240, height);
+        check(w.vertices.size() == 4 && w.edges.size() == 6 && w.faces.size() == 4,
+              "triangular pyramid: 4 vertices, 6 edges, 4 faces");
+        check(hiddenPairs(w) == std::set<std::pair<std::size_t, std::size_t>>{{0, 2}},
+              "triangular pyramid: only rear base edge AC is hidden");
+        check(w.vertices[0].y == w.vertices[2].y && (w.vertices[1].y - w.vertices[0].y) * height > 0,
+              "triangular pyramid: horizontal AC, front B follows orientation");
+    }
+    for (const auto& second: {Point(400, 600), Point(0, 600), Point(400, 100), Point(0, 100)}) {
+        auto w = SolidGeometry::triangularPrismWireframe({200, 300}, second);
+        check(w.vertices.size() == 6 && w.edges.size() == 9 && w.faces.size() == 5,
+              "triangular prism: 6 vertices, 9 edges, 5 faces in every drag direction");
+        check(hiddenPairs(w) == std::set<std::pair<std::size_t, std::size_t>>{{0, 2}},
+              "triangular prism: only lower rear AC is hidden; upper triangle solid");
+        bool vertical = true;
+        const double h = w.vertices[0].y - w.vertices[3].y;
+        for (std::size_t j = 0; j < 3; ++j) {
+            vertical &= w.vertices[j].x == w.vertices[j + 3].x &&
+                        std::abs(w.vertices[j].y - w.vertices[j + 3].y - h) < 1e-9;
+        }
+        check(vertical && h > 0, "prism: AA', BB', CC' vertical, equal and parallel");
+    }
+    for (double height: {300.0, -300.0}) {
+        const auto w = SolidGeometry::rightPyramidWireframe({300, 400}, 240, height, .35, .7, -.7);
+        check(w.vertices[4].x == w.vertices[0].x && std::abs(w.vertices[0].y - w.vertices[4].y - height) < 1e-9,
+              "right pyramid: S directly above/below A, SA retains requested height");
+        check(!hiddenPairs(w).empty(), "right pyramid: occluded edges classified automatically");
+    }
+    for (const auto& w: {SolidGeometry::triangularPyramidWireframe({300, 400}, 240, 300),
+                         SolidGeometry::triangularPrismWireframe({100, 100}, {400, 500})}) {
+        for (bool exclude: {false, true}) {
+            auto p = SolidGeometry::triangularOutline(w, exclude);
+            const auto hidden = hiddenPairs(w);
+            std::set<std::pair<std::size_t, std::size_t>> drawn;
+            bool legal = true;
+            for (std::size_t j = 1; j < p.size(); ++j) {
+                std::size_t a = w.vertices.size(), b = w.vertices.size();
+                for (std::size_t k = 0; k < w.vertices.size(); ++k) {
+                    if (p[j - 1].lineLengthTo(w.vertices[k]) < 1e-9)
+                        a = k;
+                    if (p[j].lineLengthTo(w.vertices[k]) < 1e-9)
+                        b = k;
+                }
+                if (a > b)
+                    std::swap(a, b);
+                bool edge = false;
+                for (const auto& e: w.edges) edge |= std::min(e.from, e.to) == a && std::max(e.from, e.to) == b;
+                legal &= edge && (!exclude || hidden.count({a, b}) == 0);
+                drawn.emplace(a, b);
+            }
+            check(legal, "triangular outline never crosses a face or overwrites a hidden edge");
+            check(drawn.size() + (exclude ? hidden.size() : 0) == w.edges.size(),
+                  "triangular outline covers every required edge");
+        }
     }
 
     std::printf("\n%s (%d lỗi)\n", failures == 0 ? "TẤT CẢ ĐỀU ĐẠT" : "CÓ LỖI", failures);

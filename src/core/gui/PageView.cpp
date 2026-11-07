@@ -84,6 +84,7 @@
 #include "util/raii/CLibrariesSPtr.h"               // for adopt
 #include "util/safe_casts.h"                        // for ceil_cast, floor_cast, round_cast
 #include "util/serdesstream.h"                      // for serdes_stream
+#include "view/DocumentView.h"
 #include "view/DebugShowRepaintBounds.h"            // for IF_DEBUG_REPAINT
 #include "view/overlays/MagnetSnapView.h"           // for MagnetSnapView
 #include "view/overlays/OverlayView.h"              // for OverlayView, Tool...
@@ -237,6 +238,7 @@ auto XojPageView::onButtonPressEvent(const PositionInputData& pos) -> bool {
     currentSequenceDeviceId = pos.deviceId;
 
     Control* control = xournal->getControl();
+    control->activateEditingView(xournal);
 
     if (!this->selected) {
         control->firePageSelected(this->page);
@@ -257,6 +259,13 @@ auto XojPageView::onButtonPressEvent(const PositionInputData& pos) -> bool {
 
     XournalppCursor* cursor = xournal->getCursor();
     cursor->setMouseDown(true);
+
+    xournal->clearLastSelectionRect();
+    if (h->getToolType() != TOOL_SELECT_RECT && h->getToolType() != TOOL_SELECT_REGION &&
+        h->getToolType() != TOOL_SELECT_MULTILAYER_RECT && h->getToolType() != TOOL_SELECT_MULTILAYER_REGION &&
+        !xoj::tool::isPdfSelectionTool(h->getToolType())) {
+        xournal->setPendingImageCapture(false);
+    }
 
     if (((h->getToolType() == TOOL_PEN || h->getToolType() == TOOL_HIGHLIGHTER) &&
          h->getDrawingType() != DRAWING_TYPE_SPLINE) ||
@@ -439,6 +448,7 @@ auto XojPageView::onButtonPressEvent(const PositionInputData& pos) -> bool {
     }
 
     this->onButtonClickEvent(pos);
+    this->updateMagnetSnapMarker();
 
     return true;
 }
@@ -621,6 +631,7 @@ void XojPageView::onSequenceCancelEvent(DeviceId deviceId) {
     } else if (this->laserPointer) {
         this->laserPointer->onSequenceCancelEvent();
     }
+    this->updateMagnetSnapMarker();
 }
 
 void XojPageView::onTapEvent(const PositionInputData& pos) {
@@ -688,6 +699,8 @@ void XojPageView::updateMagnetSnapMarker() {
             anchor = sh->getSnapAnchor();
         } else if (auto* bh = dynamic_cast<BaseShapeHandler*>(this->inputHandler.get()); bh) {
             anchor = bh->getSnapAnchor();
+        } else if (auto* sp = dynamic_cast<SplineHandler*>(this->inputHandler.get()); sp) {
+            anchor = sp->getSnapAnchor();
         }
     }
 
@@ -796,9 +809,21 @@ auto XojPageView::onButtonReleaseEvent(const PositionInputData& pos) -> bool {
 
     auto* pdfToolbox = control->getWindow()->getPdfToolbox();
     if (auto* selection = pdfToolbox->getSelection()) {
-        if (!selection->isFinalized() && selection->finalizeSelectionAndRepaint(pdfToolbox->selectionStyle)) {
-            // Selection was created, so reposition the toolbox and display.
-            showPdfToolbox(pos);
+        const Range pdfBounds = selection->getBoundsRange();
+        if (!selection->isFinalized()) {
+            bool textSelected = selection->finalizeSelectionAndRepaint(pdfToolbox->selectionStyle);
+            // A scan has no text rectangles, but its explicit area selection is
+            // still a valid source for local formula OCR and image copying.
+            if (textSelected || (pdfToolbox->selectionStyle == XojPdfPageSelectionStyle::Area &&
+                                 pdfBounds.getWidth() > 3 && pdfBounds.getHeight() > 3)) showPdfToolbox(pos);
+        }
+        if (pdfBounds.getWidth() > 2.0 && pdfBounds.getHeight() > 2.0) {
+            if (xournal->consumePendingImageCapture()) {
+                pdfToolbox->userCancelSelection();
+                xournal->capturePageRectAsImage(this->page, this, pdfBounds);
+                return true;
+            }
+            xournal->setLastSelectionRect(this->page, this, pdfBounds);
         }
     }
 
@@ -818,8 +843,23 @@ auto XojPageView::onButtonReleaseEvent(const PositionInputData& pos) -> bool {
     }
 
     if (this->selector) {
+        const double zoom = xournal->getZoom();
+        const bool tapped = this->selector->userTapped(zoom);
+        const Range rawBBox = this->selector->getUnclippedBBox();
         const bool aggregate = pos.isShiftDown() && xournal->getSelection();
         size_t layerOfFinalizedSel = this->selector->finalize(this->page, aggregate, control->getDocument());
+
+        if (!tapped && rawBBox.getWidth() > 2.0 && rawBBox.getHeight() > 2.0) {
+            if (xournal->consumePendingImageCapture()) {
+                this->selector.reset();
+                if (xournal->capturePageRectAsImage(this->page, this, rawBBox)) {
+                    return true;
+                }
+            }
+            xournal->setLastSelectionRect(this->page, this, rawBBox);
+        } else {
+            xournal->setPendingImageCapture(false);
+        }
 
         if (layerOfFinalizedSel) {
             xournal->setSelection([&]() {
@@ -835,7 +875,7 @@ auto XojPageView::onButtonReleaseEvent(const PositionInputData& pos) -> bool {
                 }
             }()
                                           .release());
-        } else if (const double zoom = xournal->getZoom(); selector->userTapped(zoom)) {
+        } else if (tapped) {
             if (aggregate) {
                 SelectObject(this).atAggregate(pos.x / zoom, pos.y / zoom);
             } else {
@@ -913,6 +953,7 @@ auto XojPageView::onKeyReleaseEvent(const KeyEvent& event) -> bool {
 }
 
 void XojPageView::rerenderPage(bool sizeChanged) {
+    if (xournal->isFloating()) { repaintPage(); return; }
     this->rerenderComplete = true;
     this->sizeChanged = sizeChanged;
     this->xournal->getControl()->getScheduler()->addRerenderPage(this);
@@ -980,6 +1021,7 @@ auto XojPageView::toWidgetCoordinates(const xoj::util::Rectangle<double>& r) con
 }
 
 void XojPageView::rerenderRect(double x, double y, double width, double height) {
+    if (xournal->isFloating()) { repaintArea(x,y,x+width,y+height); return; }
     if (this->rerenderComplete) {
         return;
     }
@@ -1160,7 +1202,13 @@ auto XojPageView::paintPage(cairo_t* cr, GdkRectangle* rect) -> bool {
     xoj::util::CairoSaveGuard saveGuard(cr);
     cairo_scale(cr, zoom, zoom);
 
-    {
+    if (xournal->isFloating()) {
+        // Native clipped renderer, without a full-paper bitmap. Paper may grow to
+        // 64 segments; only visible elements and native tool overlays are painted.
+        std::shared_lock lock(*xournal->getDocument());
+        DocumentView renderer;
+        renderer.drawPage(page,cr,true);
+    } else {
         std::lock_guard lock(this->drawingMutex);  // Lock the mutex first
         xoj::util::CairoSaveGuard saveGuard(cr);   // see comment at the end of the scope
         if (!this->hasBuffer()) {
@@ -1200,7 +1248,7 @@ auto XojPageView::paintPage(cairo_t* cr, GdkRectangle* rect) -> bool {
 
 auto XojPageView::isSelected() const -> bool { return selected; }
 
-auto XojPageView::hasBuffer() const -> bool { return this->buffer.isInitialized(); }
+auto XojPageView::hasBuffer() const -> bool { return xournal->isFloating() || this->buffer.isInitialized(); }
 
 auto XojPageView::getSelectionColor() -> GdkRGBA { return Util::rgb_to_GdkRGBA(settings->getSelectionColor()); }
 

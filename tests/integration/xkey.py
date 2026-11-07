@@ -24,7 +24,12 @@ def find_windows(d, win, needle, out):
     except Exception:
         cls = None
     if cls and any(needle in c.lower() for c in cls):
-        out.append(win)
+        # GTK also creates an unmapped 10x10 leader window with the same class.
+        # XSetInputFocus on that window fails with BadMatch and sends no keys.
+        attrs = win.get_attributes()
+        geo = win.get_geometry()
+        if attrs.map_state == X.IsViewable and geo.width > 100 and geo.height > 100:
+            out.append(win)
     for child in win.query_tree().children:
         find_windows(d, child, needle, out)
 
@@ -42,7 +47,7 @@ def main():
         print("KHÔNG tìm thấy cửa sổ khớp class", needle, file=sys.stderr)
         return 3
 
-    target = wins[0]
+    target = max(wins, key=lambda w: w.get_geometry().width * w.get_geometry().height)
     geo = target.get_geometry()
     print(f"WINDOW id=0x{target.id:x} {geo.width}x{geo.height}")
     # Xvfb không có WM: phải tự đặt input focus, nếu không phím rơi vào root.
@@ -50,7 +55,8 @@ def main():
     d.sync()
     time.sleep(0.2)
 
-    if d.get_input_focus().focus.id != target.id:
+    focused = d.get_input_focus().focus
+    if getattr(focused, "id", focused) != target.id:
         print("KHÔNG đặt được focus vào cửa sổ app", file=sys.stderr)
         return 4
 

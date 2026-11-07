@@ -67,6 +67,7 @@ void Layout::verticalScrollChanged(GtkAdjustment*, Layout* layout) {
 }
 
 void Layout::maybeAddLastPage(Layout* layout) {
+    if (view->isFloating()) return;
     auto* control = this->view->getControl();
     auto* settings = control->getSettings();
     if (settings->getEmptyLastPageAppend() == EmptyLastPageAppendType::OnScrollToEndOfLastPage) {
@@ -285,7 +286,7 @@ void Layout::updateVisibility() {
     }
     this->previouslyVisiblePages = std::move(visiblePages);
     if (mostPageNr) {
-        this->view->getControl()->firePageSelected(*mostPageNr);
+        this->view->selectPageInView(*mostPageNr);
     }
 }
 
@@ -302,8 +303,17 @@ auto Layout::getVisibleRect() -> xoj::util::Rectangle<double> {
 }
 
 void Layout::computePrecalculated() {
+    // RenderJob::repaintPageArea reads these arrays on the render thread via
+    // getPixelCoordinatesOfEntry(). Publish the mapper, sizes and prefix sums
+    // under the same mutex readers use, including during page insertion.
+    std::lock_guard guard{pc.m};
     auto len = view->getViewPages().size();
-    pc.mapper.configureFromSettings(len, view->getControl()->getSettings());
+    if (view->isFloating()) {
+        pc.mapper.data_ = LayoutSettings{};
+        pc.mapper.data_.cols = 1; pc.mapper.data_.rows = len; pc.mapper.data_.actualPages = len;
+        pc.mapper.pageToRaster = {{0, 0}};
+        pc.mapper.rasterToPage = {0};
+    } else pc.mapper.configureFromSettings(len, view->getControl()->getSettings());
     auto colCount = pc.mapper.getColumns();
     auto rowCount = pc.mapper.getRows();
 

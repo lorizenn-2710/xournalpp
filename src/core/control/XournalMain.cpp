@@ -43,6 +43,7 @@
 #include "util/i18n.h"                       // for _, FS, _F
 
 #include "Control.h"       // for Control
+#include "control/ScrollHandler.h"
 #include "control/zoom/ZoomControl.h"
 #include "ExportHelper.h"  // for exportImg, exportPdf
 #include "config-dev.h"    // for ERRORLOG_DIR
@@ -130,20 +131,27 @@ static void deleteFile(const fs::path& file, GtkWindow* win) {
 }
 
 void checkForEmergencySave(Control* control) {
-    auto file = Util::getConfigFile("emergencysave.xopp");
-
-    if (!fs::exists(file)) {
-        return;
+    fs::path file;
+    fs::file_time_type newest{};
+    std::error_code iterationError;
+    for (fs::directory_iterator it(Util::getConfigFolder(), iterationError), end;
+         !iterationError && it != end; it.increment(iterationError)) {
+        const auto& path = it->path();
+        const auto name = path.filename().u8string();
+        if (name != u8"emergencysave.xopp" &&
+            !(name.starts_with(u8"emergencysave-") && name.ends_with(u8".xopp"))) continue;
+        std::error_code error;
+        if (!it->is_regular_file(error) || error || fs::file_size(path, error) <= 350 || error) continue;
+        const auto modified = fs::last_write_time(path, error);
+        if (!error && (file.empty() || modified > newest)) {
+            file = path;
+            newest = modified;
+        }
     }
+    if (file.empty()) return;
 
-    std::error_code ec;
-    auto sz = fs::file_size(file, ec);
-    if (!ec && sz <= 350) {
-        fs::remove(file, ec);
-        return;
-    }
-
-    const std::string msg = _("Xournal++ crashed last time. Would you like to restore the last edited file?");
+    const std::string msg = _("Xournal++ crashed last time. Would you like to restore the last edited file?") +
+                            std::string("\n\n") + file.filename().string();
     enum { DELETE_FILE = 1, RESTORE_FILE };
     XojMsgBox::askQuestion(
             control->getGtkWindow(), _("Recovery file detected"), msg,
@@ -152,12 +160,11 @@ void checkForEmergencySave(Control* control) {
                 if (response == DELETE_FILE) {
                     deleteFile(file, ctrl->getGtkWindow());
                 } else if (response == RESTORE_FILE) {
-                    ctrl->openFileWithoutSavingTheCurrentDocument(file, false, -1, [ctrl, file](bool) {
+                    ctrl->openFileWithoutSavingTheCurrentDocument(file, false, -1, [ctrl](bool opened) {
+                        if (!opened) return;
                         ctrl->getDocument()->setFilepath("");
-
-                        // Todo Make sure the document is changed + ask for saving
                         ctrl->getUndoRedoHandler()->addUndoAction(std::make_unique<EmergencySaveRestore>());
-                        deleteFile(file, ctrl->getGtkWindow());
+                        // Restoring to RAM does not replace a recovery file on disk.
                     });
                 }
             });
@@ -497,7 +504,7 @@ void on_startup(GApplication* application, XMPtr app_data) {
 
                 if (active) {
                     if (isScratchpad) {
-                        auto sessionFile = Util::getConfigFolder() / "session.xopp";
+                        auto sessionFile = fileStr.empty() ? Util::getConfigFolder() / "session.xopp" : fs::path(fileStr);
                         if (fs::exists(sessionFile)) {
                             p = sessionFile;
                             isRestoredScratchpad = true;
@@ -520,7 +527,7 @@ void on_startup(GApplication* application, XMPtr app_data) {
             g_key_file_free(kf);
         }
 
-        if (p.empty()) {
+        if (p.empty() && app_data->control->getSettings()->isAutoloadMostRecent()) {
             auto most_recent = RecentManager::getMostRecent();
             if (most_recent) {
                 if (auto opt = Util::fromUri(gtk_recent_info_get_uri(most_recent.get()))) {
@@ -543,7 +550,7 @@ void on_startup(GApplication* application, XMPtr app_data) {
     app_data->control->openFileWithoutSavingTheCurrentDocument(
             std::move(p), app_data->attachMode, pageToOpen,
             [ctrl = app_data->control.get(), app = GTK_APPLICATION(application), isRestoredScratchpad,
-             sessionZoom](bool success) {
+             sessionZoom, pageToOpen](bool success) {
                 ctrl->getScheduler()->start();
 
                 if (isRestoredScratchpad && success) {
@@ -551,15 +558,21 @@ void on_startup(GApplication* application, XMPtr app_data) {
                     ctrl->updateWindowTitle();
                 }
 
-                if (sessionZoom > 0.05 && ctrl->getZoomControl()) {
-                    ctrl->getZoomControl()->setZoom(sessionZoom);
-                }
-
                 checkForEmergencySave(ctrl);
 
                 // There is a timing issue with the layout
-                // This fixes it, see #405
-                Util::execInUiThread([ctrl]() { ctrl->getWindow()->getXournal()->layoutPages(); });
+                // This fixes it, see #405. Also apply sessionZoom and pageToOpen after loadMetadataCallback.
+                Util::execInUiThread([ctrl, sessionZoom, pageToOpen]() {
+                    ctrl->getWindow()->getXournal()->layoutPages();
+                    if (sessionZoom > 0.05 && ctrl->getZoomControl()) {
+                        auto* z = ctrl->getZoomControl();
+                        z->setZoomFitMode(false);
+                        z->setZoom(sessionZoom * z->getZoom100Value());
+                    }
+                    if (pageToOpen >= 0 && ctrl->getScrollHandler()) {
+                        ctrl->getScrollHandler()->scrollToPage(static_cast<size_t>(pageToOpen));
+                    }
+                });
                 gtk_application_add_window(app, ctrl->getGtkWindow());
             });
 }

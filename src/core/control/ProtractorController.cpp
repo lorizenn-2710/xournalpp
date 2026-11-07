@@ -23,7 +23,7 @@ auto ProtractorController::posRelToSide(double x, double y) const -> xoj::util::
 
 auto ProtractorController::isInsideGeometryTool(double x, double y, double border) const -> bool {
     const xoj::util::Point<double> p = posRelToSide(x, y);
-    return std::hypot(p.x, p.y) <= geometryTool->getHeight() + border;
+    return std::hypot(p.x, p.y) <= geometryTool->getHeight() + border && p.y >= -0.35;
 }
 
 auto ProtractorController::getPointForAngle(double a) const -> xoj::util::Point<double> {

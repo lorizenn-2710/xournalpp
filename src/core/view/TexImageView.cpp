@@ -24,6 +24,7 @@ void TexImageView::draw(const Context& ctx) const {
     cairo_set_operator(cr, CAIRO_OPERATOR_OVER);
     texImage->getTransformation().transformCairo(cr);
 
+    auto sourceLock = texImage->lockRenderSource();
     if (PopplerDocument* pdf = texImage->getPdf(); pdf != nullptr) {
         if (poppler_document_get_n_pages(pdf) < 1) {
             g_warning("Got latex PDF without pages!: %s", texImage->getText().c_str());

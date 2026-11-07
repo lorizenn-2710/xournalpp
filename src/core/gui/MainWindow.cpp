@@ -45,6 +45,7 @@
 
 #include "GladeSearchpath.h"     // for GladeSearchpath
 #include "ToolbarDefinitions.h"  // for TOOLBAR_DEFINITIO...
+#include "FloatingNotes.h"
 #include "XournalView.h"         // for XournalView
 #include "config-dev.h"          // for TOOLBAR_CONFIG
 #include "filesystem.h"          // for path, exists
@@ -84,6 +85,7 @@ MainWindow::MainWindow(GladeSearchpath* gladeSearchPath, Control* control, GtkAp
     }
 
     initXournalWidget();
+    floatingNotes = std::make_unique<FloatingNotes>(this, GTK_OVERLAY(notesOverlay));
 
     setSidebarVisible(control->getSettings()->isSidebarVisible());
 
@@ -117,6 +119,14 @@ MainWindow::MainWindow(GladeSearchpath* gladeSearchPath, Control* control, GtkAp
     // "watch over" all key events
     auto keyPropagate = +[](GtkWidget* w, GdkEvent* e, gpointer data) -> gboolean {
         auto* ev = (GdkEventKey*)e;
+        auto* window = static_cast<MainWindow*>(data);
+        if (window->getFloatingNotes() && window->getFloatingNotes()->handleKey(ev)) return true;
+        // Opening/replacing a document can leave GTK's focus on an unrealized
+        // page/entry. Do not propagate shortcut/modifier events into that old
+        // widget; GTK otherwise emits a critical before processing accelerators.
+        auto* focused = gtk_window_get_focus(GTK_WINDOW(w));
+        if (focused && !gtk_widget_get_realized(focused))
+            gtk_window_set_focus(GTK_WINDOW(w), nullptr);
         if (ev->type == GDK_KEY_PRESS) {
             guint keyval = ev->keyval;
             GdkModifierType state = (GdkModifierType)(ev->state & gtk_accelerator_get_default_mod_mask());
@@ -126,7 +136,7 @@ MainWindow::MainWindow(GladeSearchpath* gladeSearchPath, Control* control, GtkAp
                 ((keyval == GDK_KEY_y || keyval == GDK_KEY_Y) && (state & GDK_MOD1_MASK) && !(state & GDK_CONTROL_MASK))) {
                 auto* self = static_cast<MainWindow*>(data);
                 GtkWidget* focus = gtk_window_get_focus(GTK_WINDOW(w));
-                if (!focus || !GTK_IS_ENTRY(focus)) {
+                if ((!focus || !GTK_IS_ENTRY(focus)) && !self->getControl()->getTextEditor()) {
                     if (auto* pc = self->getControl()->getPluginController()) {
                         if (pc->executeCallback("vk640SplitPdfNoteShift")) {
                             return TRUE;
@@ -139,7 +149,7 @@ MainWindow::MainWindow(GladeSearchpath* gladeSearchPath, Control* control, GtkAp
                 !(state & (GDK_SHIFT_MASK | GDK_MOD1_MASK))) {
                 auto* self = static_cast<MainWindow*>(data);
                 GtkWidget* focus = gtk_window_get_focus(GTK_WINDOW(w));
-                if (!focus || !GTK_IS_ENTRY(focus)) {
+                if ((!focus || !GTK_IS_ENTRY(focus)) && !self->getControl()->getTextEditor()) {
                     if (auto* pc = self->getControl()->getPluginController()) {
                         if (pc->executeCallback("vk640SplitPdfNote")) {
                             return TRUE;
@@ -344,7 +354,11 @@ void MainWindow::initXournalWidget() {
 
     setGtkTouchscreenScrollingForDeviceMapping();
 
-    gtk_box_append(GTK_BOX(get("boxContents")), winXournal);
+    notesOverlay = gtk_overlay_new();
+    gtk_widget_set_hexpand(notesOverlay,true); gtk_widget_set_vexpand(notesOverlay,true);
+    gtk_container_add(GTK_CONTAINER(notesOverlay),winXournal);
+    gtk_box_append(GTK_BOX(get("boxContents")), notesOverlay);
+    gtk_widget_show(notesOverlay);
 
     scrollHandling = std::make_unique<ScrollHandling>(GTK_SCROLLED_WINDOW(winXournal));
 

@@ -24,6 +24,10 @@ public:
     CoordinateSystemHandler(Control* control, const PageRef& page, bool flipShift = false, bool flipControl = false);
     ~CoordinateSystemHandler() override;
 
+    /// Pure geometry shared by the interactive preview and regression tests.
+    static auto axes(const Point& start, const Point& end, bool spatial, bool firstQuadrant)
+            -> std::pair<std::vector<Point>, Range>;
+
 private:
     auto createShape(bool isAltDown, bool isShiftDown, bool isControlDown)
             -> std::pair<std::vector<Point>, Range> override;

@@ -1,6 +1,7 @@
 #include "PopplerGlibPage.h"
 
 #include <algorithm>  // for max, min
+#include <cmath>      // for abs
 #include <cstdlib>    // for abs, NULL, ptrdiff_t
 #include <memory>     // for make_unique
 #include <sstream>    // for operator<<, ostringstream, bas...
@@ -19,21 +20,62 @@
 #include "PopplerGlibAction.h"  // for PopplerGlibAction
 #include "cairo.h"              // for cairo_region_create, cairo_reg...
 
+void PopplerGlibPage::computePageScale(double rawW, double rawH, double& outScaleX, double& outScaleY) {
+    outScaleX = 1.0;
+    outScaleY = 1.0;
+    const double shortSide = std::min(rawW, rawH);
+    const double longSide = std::max(rawW, rawH);
+    if (shortSide > 900.0 && longSide > 0.0) {
+        const double ratio = shortSide / longSide;
+        double targetShort = 595.27559;
+        double targetLong = targetShort / ratio;
+        if (std::abs(ratio - (612.0 / 792.0)) < 0.025) {
+            targetShort = 612.0;
+            targetLong = 792.0;
+        } else if (std::abs(ratio - (595.27559 / 841.88976)) < 0.025) {
+            targetShort = 595.27559;
+            targetLong = 841.88976;
+        }
+        const double normW = (rawW <= rawH) ? targetShort : targetLong;
+        const double normH = (rawW <= rawH) ? targetLong : targetShort;
+        outScaleX = normW / rawW;
+        outScaleY = normH / rawH;
+    }
+}
+
+void PopplerGlibPage::initScale() {
+    scaleX = 1.0;
+    scaleY = 1.0;
+    if (!page) {
+        return;
+    }
+    double rawW = 0.0;
+    double rawH = 0.0;
+    poppler_page_get_size(const_cast<PopplerPage*>(page), &rawW, &rawH);
+    computePageScale(rawW, rawH, scaleX, scaleY);
+}
+
 PopplerGlibPage::PopplerGlibPage(PopplerPage* page, PopplerDocument* parentDoc, std::shared_ptr<std::mutex> mutex):
         page(page), document(parentDoc), mutex(mutex) {
     if (page != nullptr) {
         g_object_ref(page);
     }
+    // Snapshots can outlive the open Document while an OCR job is cancelled.
+    // Keep the parent PDF alive independently of the document's page vector.
+    if (document) g_object_ref(document);
+    initScale();
 }
 
 PopplerGlibPage::PopplerGlibPage(const PopplerGlibPage& other):
-        page(other.page), document(other.document), mutex(other.mutex) {
+        page(other.page), document(other.document), mutex(other.mutex), scaleX(other.scaleX), scaleY(other.scaleY) {
     if (page != nullptr) {
         g_object_ref(page);
     }
+    if (document) g_object_ref(document);
 }
 
 PopplerGlibPage::~PopplerGlibPage() {
+    if (document) g_object_unref(document);
     if (page) {
         g_object_unref(page);
         page = nullptr;
@@ -54,8 +96,12 @@ PopplerGlibPage& PopplerGlibPage::operator=(const PopplerGlibPage& other) {
         g_object_ref(page);
     }
 
+    if (document) g_object_unref(document);
     document = other.document;
+    if (document) g_object_ref(document);
     mutex = other.mutex;
+    scaleX = other.scaleX;
+    scaleY = other.scaleY;
 
     return *this;
 }
@@ -64,14 +110,14 @@ auto PopplerGlibPage::getWidth() const -> double {
     double width = 0;
     poppler_page_get_size(const_cast<PopplerPage*>(page), &width, nullptr);
 
-    return width;
+    return width * scaleX;
 }
 
 auto PopplerGlibPage::getHeight() const -> double {
     double height = 0;
     poppler_page_get_size(const_cast<PopplerPage*>(page), nullptr, &height);
 
-    return height;
+    return height * scaleY;
 }
 
 void PopplerGlibPage::render(cairo_t* cr) const {
@@ -79,13 +125,21 @@ void PopplerGlibPage::render(cairo_t* cr) const {
     cairo_save(cr);
     cairo_set_source_rgb(cr, 1., 1., 1.);
     cairo_paint(cr);
+    if (scaleX != 1.0 || scaleY != 1.0) {
+        cairo_scale(cr, scaleX, scaleY);
+    }
     poppler_page_render(page, cr);
     cairo_restore(cr);
 }
 
 void PopplerGlibPage::renderForPrinting(cairo_t* cr) const {
     std::lock_guard guard(*mutex);
+    cairo_save(cr);
+    if (scaleX != 1.0 || scaleY != 1.0) {
+        cairo_scale(cr, scaleX, scaleY);
+    }
     poppler_page_render_for_printing(page, cr);
+    cairo_restore(cr);
 }
 
 auto PopplerGlibPage::getPageId() const -> int { return poppler_page_get_index(page); }
@@ -98,12 +152,15 @@ auto PopplerGlibPage::getPageLabel() const -> std::string {
 }
 
 auto PopplerGlibPage::findText(const std::string& text) -> std::vector<XojPdfRectangle> {
+    std::lock_guard guard(*mutex);
     std::vector<XojPdfRectangle> findings;
 
-    double height = getHeight();
+    double rawHeight = 0;
+    poppler_page_get_size(const_cast<PopplerPage*>(page), nullptr, &rawHeight);
     GList* matches = poppler_page_find_text(page, text.c_str());
     for (auto& rect: GListView<PopplerRectangle>(matches)) {
-        findings.emplace_back(rect.x1, height - rect.y2, rect.x2, height - rect.y1);
+        findings.emplace_back(rect.x1 * scaleX, (rawHeight - rect.y2) * scaleY, rect.x2 * scaleX,
+                              (rawHeight - rect.y1) * scaleY);
         poppler_rectangle_free(&rect);
     }
     g_list_free(matches);
@@ -127,7 +184,8 @@ auto getPopplerSelectionStyle(XojPdfPageSelectionStyle style) -> PopplerSelectio
 }
 
 auto PopplerGlibPage::selectText(const XojPdfRectangle& rect, XojPdfPageSelectionStyle style) -> std::string {
-    PopplerRectangle pRect = {rect.x1, rect.y1, rect.x2, rect.y2};
+    std::lock_guard guard(*mutex);
+    PopplerRectangle pRect = {rect.x1 / scaleX, rect.y1 / scaleY, rect.x2 / scaleX, rect.y2 / scaleY};
     const auto pStyle = getPopplerSelectionStyle(style);
     if (style == XojPdfPageSelectionStyle::Area) {
         PopplerRectangle* rectArray = nullptr;
@@ -144,10 +202,10 @@ auto PopplerGlibPage::selectText(const XojPdfRectangle& rect, XojPdfPageSelectio
             // do not copy characters whose bounding box has a non-empty intersection with rect
             const auto& r = rectArray[i];
             {
-                auto x1 = std::max(rect.x1, r.x1);
-                auto y1 = std::max(rect.y1, r.y1);
-                auto x2 = std::min(rect.x2, r.x2);
-                auto y2 = std::min(rect.y2, r.y2);
+                auto x1 = std::max(pRect.x1, r.x1);
+                auto y1 = std::max(pRect.y1, r.y1);
+                auto x2 = std::min(pRect.x2, r.x2);
+                auto y2 = std::min(pRect.y2, r.y2);
 
                 bool inBounds = x2 > x1 && y2 > y1;
                 if (!inBounds)
@@ -180,12 +238,16 @@ auto PopplerGlibPage::selectText(const XojPdfRectangle& rect, XojPdfPageSelectio
 }
 
 auto PopplerGlibPage::selectTextRegion(const XojPdfRectangle& rect, XojPdfPageSelectionStyle style) -> cairo_region_t* {
-    PopplerRectangle pRect = {rect.x1, rect.y1, rect.x2, rect.y2};
+    std::lock_guard guard(*mutex);
+    return selectTextRegionUnlocked(rect, style);
+}
+auto PopplerGlibPage::selectTextRegionUnlocked(const XojPdfRectangle& rect, XojPdfPageSelectionStyle style) -> cairo_region_t* {
+    PopplerRectangle pRect = {rect.x1 / scaleX, rect.y1 / scaleY, rect.x2 / scaleX, rect.y2 / scaleY};
     const auto pStyle = getPopplerSelectionStyle(style);
     // The computed region is technically wrong for
     // XojPdfPageSelectionStyle::Area, but there is no selection preview with
     // area select.
-    cairo_region_t* region = poppler_page_get_selected_region(page, 1.0, pStyle, &pRect);
+    cairo_region_t* region = poppler_page_get_selected_region(page, scaleX, pStyle, &pRect);
     return region;
 }
 
@@ -197,13 +259,16 @@ cairo_rectangle_int_t cairoRectFromDouble(double x1, double y1, double width, do
 
 auto PopplerGlibPage::selectTextLines(const XojPdfRectangle& selectRect, XojPdfPageSelectionStyle style)
         -> TextSelection {
+    std::lock_guard guard(*mutex);
     std::vector<XojPdfRectangle> textRects;
 
     // The selection rectangle may be "improper" by having x2 <= x1 or y1 <= y2 (e.g., if user
     // selects from right to left or from bottom to top). This is incompatible with cairo, so
     // construct a proper rectangle satisfying x1 <= x2 and y1 <= y2.
-    PopplerRectangle rect{std::min(selectRect.x1, selectRect.x2), std::min(selectRect.y1, selectRect.y2),
-                          std::max(selectRect.x1, selectRect.x2), std::max(selectRect.y1, selectRect.y2)};
+    PopplerRectangle rect{std::min(selectRect.x1, selectRect.x2) / scaleX,
+                          std::min(selectRect.y1, selectRect.y2) / scaleY,
+                          std::max(selectRect.x1, selectRect.x2) / scaleX,
+                          std::max(selectRect.y1, selectRect.y2) / scaleY};
 
     PopplerRectangle* rectArray = nullptr;
     guint numRects = 0;
@@ -224,7 +289,7 @@ auto PopplerGlibPage::selectTextLines(const XojPdfRectangle& selectRect, XojPdfP
     cairo_region_t* region = nullptr;
     if (style != XojPdfPageSelectionStyle::Area) {
         // do not use the "proper" rectangle here as it may be different from the actual selection.
-        region = selectTextRegion(selectRect, style);
+        region = selectTextRegionUnlocked(selectRect, style);
     }
 
     const auto isSameLine = [&](const auto& r1, const auto& r2) {
@@ -243,7 +308,7 @@ auto PopplerGlibPage::selectTextLines(const XojPdfRectangle& selectRect, XojPdfP
 
             bool inBounds = x2 > x1 && y2 > y1;
             if (inBounds) {
-                textRects.emplace_back(r.x1, r.y1, r.x2, r.y2);
+                textRects.emplace_back(r.x1 * scaleX, r.y1 * scaleY, r.x2 * scaleX, r.y2 * scaleY);
             }
         };
 
@@ -282,9 +347,9 @@ auto PopplerGlibPage::selectTextLines(const XojPdfRectangle& selectRect, XojPdfP
 
         // helper to add only those rectangles that are contained in the selection region
         const auto addTextRectsInRegion = [&](const PopplerRectangle& r) {
-            auto crect = cairoRectFromDouble(r.x1, r.y1, r.x2 - r.x1, r.y2 - r.y1);
+            auto crect = cairoRectFromDouble(r.x1 * scaleX, r.y1 * scaleY, (r.x2 - r.x1) * scaleX, (r.y2 - r.y1) * scaleY);
             if (cairo_region_contains_rectangle(region, &crect) == CAIRO_REGION_OVERLAP_IN) {
-                textRects.emplace_back(r.x1, r.y1, r.x2, r.y2);
+                textRects.emplace_back(r.x1 * scaleX, r.y1 * scaleY, r.x2 * scaleX, r.y2 * scaleY);
             }
         };
 
@@ -295,7 +360,8 @@ auto PopplerGlibPage::selectTextLines(const XojPdfRectangle& selectRect, XojPdfP
                 // merge the rectangles if they, when combined, are contained in the selection region
                 auto x1 = std::min(prevRect.x1, nextRect.x2);
                 auto x2 = std::max(prevRect.x2, nextRect.x2);
-                auto crect = cairoRectFromDouble(x1, prevRect.y1, x2 - x1, prevRect.y2 - prevRect.y1);
+                auto crect = cairoRectFromDouble(x1 * scaleX, prevRect.y1 * scaleY, (x2 - x1) * scaleX,
+                                                 (prevRect.y2 - prevRect.y1) * scaleY);
                 if (cairo_region_contains_rectangle(region, &crect) == CAIRO_REGION_OVERLAP_IN) {
                     prevRect.x1 = x1;
                     prevRect.x2 = x2;
@@ -313,15 +379,18 @@ auto PopplerGlibPage::selectTextLines(const XojPdfRectangle& selectRect, XojPdfP
 }
 
 auto PopplerGlibPage::getLinks() -> std::vector<Link> {
+    std::lock_guard guard(*mutex);
     std::vector<Link> results;
-    const double height = getHeight();
+    double rawHeight = 0;
+    poppler_page_get_size(const_cast<PopplerPage*>(page), nullptr, &rawHeight);
 
     GList* links = poppler_page_get_link_mapping(this->page);
     for (GList* l = links; l != NULL; l = g_list_next(l)) {
         const auto& link = *static_cast<PopplerLinkMapping*>(l->data);
 
         if (link.action) {
-            XojPdfRectangle rect{link.area.x1, height - link.area.y2, link.area.x2, height - link.area.y1};
+            XojPdfRectangle rect{link.area.x1 * scaleX, (rawHeight - link.area.y2) * scaleY, link.area.x2 * scaleX,
+                                 (rawHeight - link.area.y1) * scaleY};
             results.emplace_back(Link{rect, std::make_unique<PopplerGlibAction>(link.action, document)});
         }
     }

@@ -1,6 +1,7 @@
 #include "ProtractorInputHandler.h"
 
-#include <memory>  // for __shared_ptr_access, shar...
+#include <algorithm>  // for clamp
+#include <memory>     // for __shared_ptr_access, shar...
 
 #include "control/ProtractorController.h"  // for ProtractorController, HYPOTENUSE
 #include "control/Control.h"
@@ -28,17 +29,22 @@ auto ProtractorInputHandler::handlePointer(InputEvent const& event) -> bool {
         case TOOL_HIGHLIGHTER:
         case TOOL_PEN:
             if (event.type == BUTTON_PRESS_EVENT) {
-                if (controller->isInsideGeometryTool(coords.x, coords.y, 0) &&
+                const double h = controller->getGeometryTool()->getHeight();
+                if (p.y > 0.35 && controller->isInsideGeometryTool(coords.x, coords.y, 0) &&
                     !controller->isInsideGeometryTool(coords.x, coords.y, -0.5)) {
-                    // initialize range
+                    // initialize range along curved outer arc
                     lastProj = std::atan2(-p.y, p.x);
                     protractorController->createOutlineStroke(lastProj);
                     return true;
-                } else if (double h = controller->getGeometryTool()->getHeight();
-                           controller->isInsideGeometryTool(coords.x, coords.y, 0.) &&
-                           std::abs(protractorController->posRelToSide(coords.x, coords.y).y) <= 0.5 &&
-                           std::abs(protractorController->posRelToSide(coords.x, coords.y).x - 0.5 * h) <= 0.5 * h) {
-                    protractorController->createRadialStroke(std::hypot(p.x, p.y));
+                } else if (controller->isInsideGeometryTool(coords.x, coords.y, 0.) &&
+                           std::abs(p.y) <= 0.35 && std::abs(p.x) <= h) {
+                    // initialize range along full straight bottom edge [-h, +h]
+                    protractorController->createRadialStroke(std::clamp(p.x, -h, h));
+                    return true;
+                } else if (controller->isInsideGeometryTool(coords.x, coords.y, 0.)) {
+                    // Dragging inside the protractor body moves/rotates/scales it directly
+                    sequenceStart(event);
+                    this->handScrolling = true;
                     return true;
                 }
                 return false;
@@ -51,7 +57,12 @@ auto ProtractorInputHandler::handlePointer(InputEvent const& event) -> bool {
                     lastProj = proj;
                     return true;
                 } else if (protractorController->existsRadialStroke()) {
-                    protractorController->updateRadialStroke(std::hypot(p.x, p.y));
+                    const double h = controller->getGeometryTool()->getHeight();
+                    protractorController->updateRadialStroke(std::clamp(p.x, -h, h));
+                    return true;
+                } else if (this->handScrolling) {
+                    scrollMotion(event);
+                    return true;
                 }
                 return false;
             } else if (event.type == BUTTON_RELEASE_EVENT) {
@@ -62,6 +73,9 @@ auto ProtractorInputHandler::handlePointer(InputEvent const& event) -> bool {
                     return true;
                 } else if (protractorController->existsRadialStroke()) {
                     protractorController->finalizeRadialStroke();
+                    return true;
+                } else if (this->handScrolling) {
+                    this->handScrolling = false;
                     return true;
                 }
             }
@@ -80,6 +94,7 @@ auto ProtractorInputHandler::handlePointer(InputEvent const& event) -> bool {
                 return true;
             } else if (event.type == BUTTON_RELEASE_EVENT && this->handScrolling) {
                 this->handScrolling = false;
+                return true;
             }
         default:
             return false;

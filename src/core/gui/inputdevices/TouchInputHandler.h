@@ -30,6 +30,7 @@ private:
     GdkEventSequence* primarySequence{};
     GdkEventSequence* secondarySequence{};
 
+    double floatingStartZoom = .75;
     double startZoomDistance = 0.0;
     xoj::util::Point<double> lastZoomScrollCenter{};
 

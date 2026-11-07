@@ -4,7 +4,6 @@
 #include <cmath>      // for abs
 
 #include "control/Control.h"                       // for Control
-#include "control/settings/Settings.h"             // for Settings
 #include "control/tools/BaseShapeHandler.h"        // for BaseShapeHandler
 #include "control/tools/SnapToGridInputHandler.h"  // for SnapToGridInputHandler
 #include "model/Point.h"                           // for Point
@@ -18,18 +17,13 @@ PyramidHandler::~PyramidHandler() = default;
 
 auto PyramidHandler::createShape(bool isAltDown, bool isShiftDown, bool isControlDown)
         -> std::pair<std::vector<Point>, Range> {
-    Point c = snappingHandler.snapWithElements(this->currPoint, this->startPoint, isAltDown);
+    Point c = snappingHandler.snapToGridWithElements(this->currPoint, isAltDown, true, this->startPoint);
 
     double width = c.x - this->startPoint.x;
     double height = c.y - this->startPoint.y;
 
-    this->modShift = isShiftDown;
-    this->modControl = isControlDown;
-
-    Settings* settings = control->getSettings();
-    if (settings->getDrawDirModsEnabled()) {
-        this->modifyModifiersByDrawDir(width, height, true);
-    }
+    this->modShift = isShiftDown != flipShift;
+    this->modControl = isControlDown != flipControl;
 
     const double base = std::abs(width);
     // The base of the pyramid: a parallelogram, like every textbook draws it. The front edge is
@@ -47,23 +41,25 @@ auto PyramidHandler::createShape(bool isAltDown, bool isShiftDown, bool isContro
     const double signH = height >= 0 ? 1.0 : -1.0;
     const double signW = width >= 0 ? 1.0 : -1.0;
 
-    // Centre of the base
-    Point centre;
-    if (!this->modControl) {
-        centre = Point(this->startPoint.x + signW * base / 2.0, this->startPoint.y);
+    const Point centre(this->startPoint.x + signW * base / 2.0, this->startPoint.y);
+    if (this->modShift) {
+        this->wireframe = SolidGeometry::triangularPyramidWireframe(centre, base, apexHeight * signH);
+    } else if (this->modControl) {
+        this->wireframe = SolidGeometry::rightPyramidWireframe(centre, base, apexHeight * signH, BASE_DEPTH_FRACTION,
+                                                               DEPTH_DX, DEPTH_DY);
     } else {
-        centre = this->startPoint;
+        this->wireframe = SolidGeometry::pyramidWireframe(centre, base, apexHeight * signH, BASE_DEPTH_FRACTION,
+                                                          DEPTH_DX, DEPTH_DY);
     }
-
-    this->wireframe = SolidGeometry::pyramidWireframe(centre, base, apexHeight * signH, BASE_DEPTH_FRACTION, DEPTH_DX,
-                                                      DEPTH_DY);
-
-    // The outline comes from the same wireframe the hidden edges are derived from, so the two can
-    // never disagree. It is six polylines, not one sequence: see SolidGeometry::pyramidOutline.
-    std::vector<Point> shape = SolidGeometry::pyramidOutline(this->wireframe);
+    std::vector<Point> shape = this->modShift ?
+                                       SolidGeometry::triangularOutline(this->wireframe, this->getDrawHiddenEdges()) :
+                                       SolidGeometry::pyramidOutline(this->wireframe, this->getDrawHiddenEdges());
 
     Range rg(shape.front().x, shape.front().y);
     for (const Point& p: shape) {
+        rg.addPoint(p.x, p.y);
+    }
+    for (const Point& p: this->wireframe.vertices) {
         rg.addPoint(p.x, p.y);
     }
     return {std::move(shape), rg};

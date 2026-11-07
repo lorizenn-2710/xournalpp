@@ -11,6 +11,8 @@
 
 #pragma once
 
+#include <map>
+#include <mutex>
 #include <deque>   // for deque
 #include <string>  // for string
 #include <vector>  // for vector
@@ -51,15 +53,25 @@ public:
     void addUndoRedoListener(UndoRedoListener* listener);
 
     bool isChanged();
+    bool isPageChanged(const PageRef& page) const;
     bool isChangedAutosave();
     void documentAutosaved();
+    std::vector<size_t> snapshotState() const;
+    void documentAutosaved(std::vector<size_t> snapshot);
     void documentSaved();
 
 private:
+    bool matches(const UndoActionPtr& action) const;
+    std::vector<size_t> state() const;
+    std::vector<size_t> savedState, autosavedState;
+    std::map<PageRef,std::vector<size_t>> savedPageState;
+    std::vector<size_t> pageState(const PageRef& page) const;
+    size_t nextSerial = 0;
     void clearRedo();
     void printContents();
 
 private:
+    mutable std::recursive_mutex historyMutex;
     std::deque<UndoActionPtr> undoList;
     std::deque<UndoActionPtr> redoList;
 

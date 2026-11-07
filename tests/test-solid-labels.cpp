@@ -68,8 +68,7 @@ bool allDistinctNames(const std::vector<SolidGeometry::VertexLabel>& labels) {
 }
 
 /// Mọi nhãn phải nằm trên một đỉnh thật của khung dây
-bool allOnVertices(const std::vector<SolidGeometry::VertexLabel>& labels,
-                   const std::vector<Point>& vertices) {
+bool allOnVertices(const std::vector<SolidGeometry::VertexLabel>& labels, const std::vector<Point>& vertices) {
     for (const auto& l: labels) {
         bool found = false;
         for (const Point& v: vertices) {
@@ -79,8 +78,7 @@ bool allOnVertices(const std::vector<SolidGeometry::VertexLabel>& labels,
             }
         }
         if (!found) {
-            std::printf("      nhãn %s tại %s KHÔNG nằm trên đỉnh nào\n", l.name.c_str(),
-                        fmt(l.position).c_str());
+            std::printf("      nhãn %s tại %s KHÔNG nằm trên đỉnh nào\n", l.name.c_str(), fmt(l.position).c_str());
             return false;
         }
     }
@@ -106,9 +104,8 @@ int main() {
         // Kéo theo 4 hướng khác nhau: kết quả không được phụ thuộc hướng kéo
         const double dirs[4][2] = {{0.70, -0.70}, {-0.70, -0.70}, {0.70, 0.70}, {-0.70, 0.70}};
         for (int d = 0; d < 4; ++d) {
-            auto wire = SolidGeometry::boxWireframe({100.0, 300.0}, {400.0, 500.0}, 0.35, dirs[d][0],
-                                                    dirs[d][1]);
-            std::vector<Point> outline = SolidGeometry::boxOutline(wire);
+            auto wire = SolidGeometry::boxWireframe({100.0, 300.0}, {400.0, 500.0}, 0.35, dirs[d][0], dirs[d][1]);
+            std::vector<Point> outline = SolidGeometry::boxOutline(wire, true);
             std::vector<std::vector<Point>> hidden = SolidGeometry::hiddenEdgePolylines(wire);
 
             std::vector<std::vector<Point>> strokes;
@@ -167,8 +164,8 @@ int main() {
                     }
                 }
                 if (!edge) {
-                    std::printf("      %s=%s không nối với %s=%s bằng cạnh nào\n", front.c_str(),
-                                fmt(pf).c_str(), back.c_str(), fmt(pb).c_str());
+                    std::printf("      %s=%s không nối với %s=%s bằng cạnh nào\n", front.c_str(), fmt(pf).c_str(),
+                                back.c_str(), fmt(pb).c_str());
                     pairOk = false;
                     break;
                 }
@@ -222,7 +219,7 @@ int main() {
     std::printf("== HÌNH CHÓP ==\n");
     {
         auto wire = SolidGeometry::pyramidWireframe({300.0, 400.0}, 300.0, 300.0, 0.35, 0.70, -0.70);
-        std::vector<Point> outline = SolidGeometry::pyramidOutline(wire);
+        std::vector<Point> outline = SolidGeometry::pyramidOutline(wire, true);
         std::vector<std::vector<Point>> hidden = SolidGeometry::hiddenEdgePolylines(wire);
         std::vector<std::vector<Point>> strokes;
         strokes.push_back(outline);
@@ -323,8 +320,8 @@ int main() {
         }
         check(SolidGeometry::vertexLabels(circle).empty(), "đường tròn: không đặt tên");
 
-        std::vector<std::vector<Point>> squiggle = {{{0.0, 0.0}, {10.0, 30.0}, {40.0, 12.0}, {70.0, 90.0},
-                                                     {95.0, 25.0}, {120.0, 60.0}, {130.0, 5.0}}};
+        std::vector<std::vector<Point>> squiggle = {
+                {{0.0, 0.0}, {10.0, 30.0}, {40.0, 12.0}, {70.0, 90.0}, {95.0, 25.0}, {120.0, 60.0}, {130.0, 5.0}}};
         check(SolidGeometry::vertexLabels(squiggle).empty(), "đường ngoằn ngoèo 7 đỉnh: không đặt tên");
 
         check(SolidGeometry::vertexLabels({}).empty(), "không có nét nào: không đặt tên");
@@ -333,7 +330,54 @@ int main() {
         check(SolidGeometry::vertexLabels(two).empty(), "một đoạn thẳng: không đặt tên");
     }
 
-    std::printf("\n%s (%d phép kiểm, %d lỗi)\n", failures == 0 ? "TẤT CẢ ĐỀU ĐẠT" : "CÓ LỖI", checks,
-                failures);
+    for (double height: {300.0, -300.0}) {
+        auto w = SolidGeometry::triangularPyramidWireframe({300, 400}, 240, height);
+        for (bool exclude: {false, true}) {
+            auto outline = SolidGeometry::triangularOutline(w, exclude);
+            auto strokes = SolidGeometry::hiddenEdgePolylines(w);
+            strokes.push_back(outline);  // Hidden edges first must not change S.
+            auto labels = SolidGeometry::vertexLabels(strokes);
+            check(labels.size() == 4 && allDistinctNames(labels) && allOnVertices(labels, w.vertices),
+                  "S.ABC: exactly four distinct labels on real vertices");
+            for (std::size_t j = 0; j < 4; ++j) {
+                check(nameAt(labels, w.vertices[j]) == (j == 3 ? "S" : std::string(1, 'A' + j)),
+                      "S.ABC: correct base/apex names");
+            }
+            check(SolidGeometry::vertexLabels({outline}).size() == 4,
+                  "S.ABC: visible outline alone never reconstructs a fifth vertex");
+        }
+        auto right = SolidGeometry::rightPyramidWireframe({300, 400}, 240, height, .35, .7, -.7);
+        auto strokes = SolidGeometry::hiddenEdgePolylines(right);
+        strokes.push_back(SolidGeometry::pyramidOutline(right, true));
+        auto labels = SolidGeometry::vertexLabels(strokes);
+        check(labels.size() == 5 && nameAt(labels, right.vertices[0]) == "A" &&
+                      nameAt(labels, right.vertices[4]) == "S",
+              "SA perpendicular base: A is foot, S is apex");
+    }
+    check(SolidGeometry::vertexLabels(
+                  {{{0, 100}, {50, 130}, {100, 100}, {0, 100}}, {{0, 0}, {50, 30}, {100, 0}, {0, 0}}})
+                  .empty(),
+          "two unconnected triangles: do not invent prism labels");
+
+    for (const auto& end: {Point(400, 600), Point(0, 600), Point(400, 100), Point(0, 100)}) {
+        auto w = SolidGeometry::triangularPrismWireframe({200, 300}, end);
+        for (bool exclude: {false, true}) {
+            auto outline = SolidGeometry::triangularOutline(w, exclude);
+            auto strokes = SolidGeometry::hiddenEdgePolylines(w);
+            strokes.push_back(outline);
+            auto labels = SolidGeometry::vertexLabels(strokes);
+            check(labels.size() == 6 && allDistinctNames(labels) && allOnVertices(labels, w.vertices),
+                  "ABC.A'B'C': six distinct names on real vertices in all drag directions");
+            for (std::size_t j = 0; j < 3; ++j) {
+                const std::string name(1, 'A' + j);
+                check(nameAt(labels, w.vertices[j]) == name && nameAt(labels, w.vertices[j + 3]) == name + "'",
+                      "prism: bottom A,B,C paired vertically with top A',B',C'");
+            }
+            check(SolidGeometry::vertexLabels({outline}).size() == 6,
+                  "prism: visible outline alone carries all six vertices");
+        }
+    }
+
+    std::printf("\n%s (%d phép kiểm, %d lỗi)\n", failures == 0 ? "TẤT CẢ ĐỀU ĐẠT" : "CÓ LỖI", checks, failures);
     return failures == 0 ? 0 : 1;
 }

@@ -1,5 +1,7 @@
 #include "XojPage.h"
 
+#include <glib.h>
+
 #include <algorithm>  // for find, transform
 #include <iterator>   // for back_insert_iterator, back_inserter, begin
 #include <utility>    // for move
@@ -12,6 +14,9 @@
 #include "BackgroundImage.h"  // for BackgroundImage
 
 XojPage::XojPage(double width, double height, bool suppressLayerCreation): width(width), height(height), bgType(PageTypeFormat::Lined) {
+    auto* id = g_uuid_string_random();
+    stableId = id;
+    g_free(id);
     if (!suppressLayerCreation) {
         // ensure at least one valid layer exists
         this->addLayer(new Layer());
@@ -32,6 +37,10 @@ XojPage::XojPage(XojPage const& page):
         bgType(page.bgType),
         pdfBackgroundPage(page.pdfBackgroundPage),
         backgroundColor(page.backgroundColor) {
+    auto* id = g_uuid_string_random();
+    stableId = id;
+    g_free(id);
+    floatingNote = page.floatingNote;
     this->layer.reserve(page.layer.size());
     std::transform(begin(page.layer), end(page.layer), std::back_inserter(this->layer),
                    [](auto* layer) { return layer->clone(); });

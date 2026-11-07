@@ -1322,3 +1322,33 @@ app.C = {
     Alignment_center = 1,
     Alignment_right = 2,
 }
+
+---Visible part of the current page, in page points; nil if the page is not visible.
+---@return {x:number, y:number, width:number, height:number}|nil
+function app.getVisiblePageRect() end
+
+---Show shortcut captions under toolbar controls; omit the argument to toggle.
+---@param visible? boolean
+---@return boolean visible
+function app.showToolbarShortcuts(visible) end
+
+--- Open the native teaching graph/tangent/table dialog. No document mutation until Insert.
+function app.showMathTools() end
+--- Insert a vector graph (mode=0), automatic variation table (1), or manual table (2).
+--- All elements are selected and belong to one undo action. Returns true or nil,error.
+--- @param options table formula, formula2, second, m, x0, tangent, xmin/xmax/ymin/ymax,
+--- xtick/ytick, piTicks, equalScale, xlabel/ylabel; tableX/tableSign/tableValue/tableName.
+--- pretty=true renders formula labels as embedded vector PDF (TexImage); formulaOnly=true
+--- inserts only the enabled formulas. Existing callers keep their Stroke/Text behavior.
+function app.insertMathFigure(options) end
+
+--- Native document-owned floating scratch notebook commands.
+---@param command 'toggle'|'new'|'library'|'toggle-library'
+function app.floatingNotes(command) end
+
+--- Read native notebook metadata/content counts without changing the editing target.
+--- Returns stable IDs, viewport state, open/pinned/deleted/dirty flags and asset counts.
+--- Main page/all/notePages APIs retain their original main-document scope.
+---@return table notes
+---@return integer mainStrokeCount
+function app.getFloatingNotes() end

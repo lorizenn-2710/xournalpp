@@ -33,7 +33,8 @@
 #include "XojPage.h"          // for XojPage
 #include "filesystem.h"       // for path
 
-Document::Document(DocumentHandler* handler): handler(handler) {}
+Document::Document(DocumentHandler* handler): handler(handler) {
+    auto* uuid = g_uuid_string_random(); recoveryId = uuid; g_free(uuid);}
 
 Document::~Document() {
     clearDocument(true);
@@ -85,11 +86,17 @@ void Document::clearDocument(bool destroy) {
         }
     }
 
+    auto* nextRecoveryId = g_uuid_string_random();
+    recoveryId = nextRecoveryId;
+    g_free(nextRecoveryId);
+    this->floatingNotes.clear();
     this->pages.clear();
     this->pageIndex.reset();
     freeTreeContentModel();
 
     this->filepath = fs::path{};
+    this->savedFileTime.reset();
+    this->savedFileSize.reset();
     this->pdfFilepath = fs::path{};
 }
 
@@ -100,7 +107,23 @@ auto Document::getPageCount() const -> size_t { return this->pages.size(); }
 
 auto Document::getPdfPageCount() const -> size_t { return pdfDocument.getPageCount(); }
 
-void Document::setFilepath(fs::path filepath) { this->filepath = std::move(filepath); }
+void Document::setFilepath(fs::path filepath) {
+    this->filepath = std::move(filepath);
+    std::error_code ec;
+    const auto time = fs::last_write_time(this->filepath, ec);
+    savedFileTime = ec ? std::nullopt : std::make_optional(time);
+    ec.clear();
+    const auto size = fs::file_size(this->filepath, ec);
+    savedFileSize = ec ? std::nullopt : std::make_optional(size);
+}
+bool Document::hasExternalModification() const {
+    if (!savedFileTime || !savedFileSize || filepath.empty()) return false;
+    std::error_code ec;
+    const auto currentTime = fs::last_write_time(filepath, ec);
+    if (ec || currentTime != *savedFileTime) return true;
+    const auto currentSize = fs::file_size(filepath, ec);
+    return ec || currentSize != *savedFileSize;
+}
 
 auto Document::getFilepath() const -> fs::path { return filepath; }
 
@@ -351,7 +374,8 @@ auto Document::readPdf(const fs::path& filename, bool initPages, bool attachToDo
     lastError = "";
 
     if (initPages) {
-        this->pages.clear();
+        this->floatingNotes.clear();
+    this->pages.clear();
     }
 
     if (initPages) {
@@ -448,7 +472,10 @@ auto Document::operator=(const Document& doc) -> Document& {
     this->createBackupOnSave = doc.createBackupOnSave;
     this->pdfFilepath = doc.pdfFilepath;
     this->filepath = doc.filepath;
+    this->savedFileTime = doc.savedFileTime;
+    this->savedFileSize = doc.savedFileSize;
     this->pages = doc.pages;
+    this->floatingNotes = doc.floatingNotes;
     this->attachPdf = doc.attachPdf;
     this->pathStorageMode = doc.pathStorageMode;
 

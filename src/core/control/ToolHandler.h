@@ -13,6 +13,7 @@
 
 #include <array>       // for array
 #include <functional>  // for function
+#include <map>
 #include <memory>      // for unique_ptr
 #include <vector>      // for vector
 
@@ -257,7 +258,8 @@ public:
      * @param listener A callback, called when the user/client
      *  changes tools.
      */
-    void addToolChangedListener(ToolChangedCallback listener);
+    size_t addToolChangedListener(ToolChangedCallback listener);
+    void removeToolChangedListener(size_t subscription);
 
     /**
      * @brief Get the Tool of a certain type
@@ -425,7 +427,8 @@ private:
     std::unique_ptr<Tool> mouseButton5Tool;
     std::unique_ptr<Tool> touchDrawingButtonTool;
 
-    std::vector<ToolChangedCallback> toolChangeListeners;
+    std::map<size_t, ToolChangedCallback> toolChangeListeners;
+    size_t nextToolSubscription = 0;
 
     ToolListener* stateChangeListener = nullptr;
     ActionDatabase* actionDB = nullptr;

@@ -6,6 +6,7 @@
 #include <string>
 
 #include "control/Control.h"
+#include "model/Document.h"
 #include "control/xojfile/SaveHandler.h"  // for SaveHandler
 #include "util/PathUtil.h"
 #include "util/Stacktrace.h"
@@ -22,12 +23,7 @@ void setEmergencyControl(Control* ctrl) { emergencyControl = ctrl; }
 extern "C" void forceClose(int sig) {
     g_warning("Force close requested with signal %i", sig);
     Control* ctrl = emergencyControl.load();
-    if (ctrl) {
-        ctrl->saveSessionOnQuit();
-        auto emergencyFile = Util::getConfigFile("emergencysave.xopp");
-        std::error_code ec;
-        fs::remove(emergencyFile, ec);
-    } else {
+    if (!ctrl || !ctrl->saveSessionOnQuit(true)) {
         emergencySave();
     }
     exit(0);
@@ -36,16 +32,17 @@ extern "C" void forceClose(int sig) {
 void setEmergencyDocument(const Document* doc) { document = doc; }
 
 void emergencySave() {
-    if (document == nullptr) {
+    const auto* doc = document.load();
+    if (!doc) {
         return;
     }
 
     std::cerr << "Trying to emergency save the current open document..." << std::endl;
 
-    auto const& filepath = Util::getConfigFile("emergencysave.xopp");
+    const auto filepath = Util::getConfigFolder() / ("emergencysave-" + doc->recoveryId + ".xopp");
 
     SaveHandler handler;
-    handler.prepareSave(document, filepath);
+    handler.prepareSave(doc, filepath);
     handler.saveTo(filepath);
 
     if (!handler.getErrorMessage().empty()) {

@@ -596,6 +596,12 @@ struct ActionProperties<Action::SELECT_TOOL> {
         if (requiresClearedSelection(tt)) {
             ctrl->clearSelection();
         }
+        if (tt == TOOL_PEN && ctrl->getToolHandler()->getTool(TOOL_PEN).getDrawingType() != DRAWING_TYPE_DEFAULT) {
+            if (ctrl->getToolHandler()->getTool(TOOL_PEN).getDrawingType() == DRAWING_TYPE_SPLINE && ctrl->getWindow()) {
+                ctrl->getWindow()->getXournal()->endSplineAllPages();
+            }
+            ctrl->getToolHandler()->getTool(TOOL_PEN).setDrawingType(DRAWING_TYPE_DEFAULT);
+        }
         ctrl->selectTool(tt);
     }
 };
@@ -633,7 +639,15 @@ struct ActionPropDrawingTypes {
         g_simple_action_set_state(ga, p);
         bool enabled = g_variant_get_boolean(p);
 
+        if (enabled) {
+            ToolType currentTool = ctrl->getToolHandler()->getToolType();
+            if (currentTool != TOOL_PEN && currentTool != TOOL_HIGHLIGHTER) {
+                ctrl->clearSelectionEndText();
+                ctrl->getToolHandler()->selectTool(TOOL_PEN);
+            }
+        }
         ctrl->setToolDrawingType(enabled ? type : DRAWING_TYPE_DEFAULT);
+        ctrl->getToolHandler()->fireToolChanged();
     }
 };
 

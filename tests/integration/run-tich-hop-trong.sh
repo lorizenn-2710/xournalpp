@@ -6,13 +6,19 @@ D=/tmp/xpp-kt2
 S=$(cd "$(dirname "$0")" && pwd)
 APP=$HOME/.local/bin/xournalpp
 
+mkdir -p "$D/data" "$D/run"
+chmod 700 "$D/run"
 export XDG_CONFIG_HOME="$D"
+export XDG_DATA_HOME="$D/data"
+export XDG_RUNTIME_DIR="$D/run"
 unset WAYLAND_DISPLAY
 export GDK_BACKEND=x11
 export NO_AT_BRIDGE=1
 
-rm -f "$D/xournalpp/emergencysave.xopp" "$D/bus.txt"
+rm -f "$D/xournalpp/emergencysave.xopp" "$D/xournalpp/session.ini" "$D/xournalpp/session.xopp" "$D/bus.txt"
 setsid "$APP" >"$D/app.log" 2>&1 &
+APPPID=$!
+trap 'kill "$APPPID" 2>/dev/null || true' EXIT
 
 # Chờ tên bus: chỉ thấy app CỦA MÌNH vì đây là bus riêng của dbus-run-session.
 for i in $(seq 1 120); do
@@ -94,6 +100,6 @@ go "${IDX_NOTEPAGES:-41}" C-notepages   # <-- CALLBACK THẬT: vk640EraseNotePag
 go 28 28-allC2        # sau lệnh: nét giảm ĐÚNG bằng số nét giấy nháp của mốc
 go 24 24-pagesC       # liệt kê từng trang: nét biến mất ở đúng các trang nháp
 
-pkill -f "^$APP$" 2>/dev/null || pkill -x xournalpp 2>/dev/null || true
+kill "$APPPID" 2>/dev/null || true
 sleep 1
 echo "XONG"

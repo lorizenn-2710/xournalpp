@@ -12,6 +12,8 @@
 #include "util/Util.h"                 // for npos
 #include "util/raii/CLibrariesSPtr.h"  // for ref
 
+#include "PopplerGlibPage.h"  // for PopplerGlibPage
+
 using std::string;
 
 PopplerGlibAction::PopplerGlibAction(PopplerAction* action, PopplerDocument* document):
@@ -63,17 +65,20 @@ void PopplerGlibAction::linkFromDest(LinkDestination& link, PopplerDest* pDest) 
             double pageWidth = 0;
             double pageHeight = 0;
             poppler_page_get_size(page, &pageWidth, &pageHeight);
+            double scaleX = 1.0;
+            double scaleY = 1.0;
+            PopplerGlibPage::computePageScale(pageWidth, pageHeight, scaleX, scaleY);
 
             if (pDest->left != 0) {
-                link.setChangeLeft(pDest->left);
+                link.setChangeLeft(pDest->left * scaleX);
             } else if (pDest->right != 0) {
-                link.setChangeLeft(pageWidth - pDest->right);
+                link.setChangeLeft((pageWidth - pDest->right) * scaleX);
             }
 
             if (pDest->top != 0) {
-                link.setChangeTop(pageHeight - std::min(pageHeight, pDest->top));
+                link.setChangeTop((pageHeight - std::min(pageHeight, pDest->top)) * scaleY);
             } else if (pDest->bottom != 0) {
-                link.setChangeTop(pageHeight - std::min(pageHeight, pageHeight - pDest->bottom));
+                link.setChangeTop((pageHeight - std::min(pageHeight, pageHeight - pDest->bottom)) * scaleY);
             }
 
             if (pDest->zoom != 0) {

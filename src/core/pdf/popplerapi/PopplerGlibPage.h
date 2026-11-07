@@ -50,8 +50,15 @@ public:
 
     std::string getPageLabel() const override;
 
+    static void computePageScale(double rawW, double rawH, double& outScaleX, double& outScaleY);
+
 private:
+    void initScale();
+    cairo_region_t* selectTextRegionUnlocked(const XojPdfRectangle&, XojPdfPageSelectionStyle);
+
     PopplerPage* page;
     PopplerDocument* document;
     std::shared_ptr<std::mutex> mutex;  ///< Poppler doesn't support parallel renderings. Lock this mutex when rendering
+    double scaleX = 1.0;
+    double scaleY = 1.0;
 };

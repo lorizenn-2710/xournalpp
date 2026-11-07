@@ -30,6 +30,7 @@
 #include "util/Assert.h"            // for xoj_assert
 #include "util/gtk4_helper.h"       // for gtk_widget_get_clipboard
 
+#include "gui/dialog/TeachingToolsDialog.h"
 #include "MainWindow.h"  // for MainWindow
 
 PdfFloatingToolbox::PdfFloatingToolbox(MainWindow* theMainWindow, GtkOverlay* overlay):
@@ -47,6 +48,16 @@ PdfFloatingToolbox::PdfFloatingToolbox(MainWindow* theMainWindow, GtkOverlay* ov
     g_signal_connect(theMainWindow->get("pdfTbStrikethrough"), "clicked", G_CALLBACK(this->strikethroughCb), this);
     g_signal_connect(theMainWindow->get("pdfTbChangeType"), "clicked", G_CALLBACK(this->switchSelectTypeCb), this);
 
+    auto* graph=gtk_button_new_with_label("Vẽ đồ thị từ vùng chọn");
+    gtk_widget_set_size_request(graph,180,40);
+    gtk_grid_attach(GTK_GRID(gtk_bin_get_child(GTK_BIN(this->floatingToolbox))),graph,0,3,3,1);
+    g_signal_connect(graph,"clicked",G_CALLBACK(+[](GtkButton*,gpointer data){
+        auto* self=static_cast<PdfFloatingToolbox*>(data);
+        // Return from the button/AT-SPI action before entering a modal loop.
+        // Keeping it nested here stalls the accessibility application's bus reply.
+        g_idle_add(+[](gpointer p)->gboolean { teaching::showTools(static_cast<Control*>(p)); return G_SOURCE_REMOVE; },
+                   self->theMainWindow->getControl());
+    }),this);
     this->clearSelection();
     this->hide();
 }

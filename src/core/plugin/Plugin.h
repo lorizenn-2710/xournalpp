@@ -66,11 +66,12 @@ struct MenuEntry final {
 struct ToolbarButtonEntry final {
     ToolbarButtonEntry() = default;
     ToolbarButtonEntry(Plugin* plugin, std::string description, std::string toolbarId, std::string iconName,
-                       std::string callback, ptrdiff_t mode):
+                       std::string callback, ptrdiff_t mode, std::string accelerator):
             plugin(plugin),
             description(std::move(description)),
             toolbarId(std::move(toolbarId)),
             iconName(std::move(iconName)),
+            accelerator(std::move(accelerator)),
             callback(std::move(callback)),
             mode(mode) {}
 
@@ -78,6 +79,7 @@ struct ToolbarButtonEntry final {
     std::string description{};  ///< description displayed on hovering over the toolbar button
     std::string toolbarId{};    ///< toolbar ID to be used in toolbar.ini
     std::string iconName{};     ///< name of the icon which should be stored as iconName + ".svg"
+    std::string accelerator{};  ///< same shortcut as its registered menu entry
     std::string callback{};     ///< Callback function name
     ptrdiff_t mode{std::numeric_limits<ptrdiff_t>::max()};  ///< mode in which the callback function is run
 };
@@ -131,7 +133,7 @@ public:
 
     // Register toolbar button
     void registerToolButton(std::string description, std::string toolbarId, std::string iconName, std::string callback,
-                            ptrdiff_t mode);
+                            ptrdiff_t mode, std::string accelerator = {});
     // Register all toolbar buttons
     void registerToolButton(ToolMenuHandler* toolMenuHandler);
     void registerPlaceholders(ToolMenuHandler* toolMenuHandler);

@@ -16,7 +16,7 @@ TriangleHandler::~TriangleHandler() = default;
 
 auto TriangleHandler::createShape(bool isAltDown, bool isShiftDown, bool isControlDown)
         -> std::pair<std::vector<Point>, Range> {
-    Point c = snappingHandler.snapWithElements(this->currPoint, this->startPoint, isAltDown);
+    Point c = snappingHandler.snapToGridWithElements(this->currPoint, isAltDown, true, this->startPoint);
 
     double width = c.x - this->startPoint.x;
     double height = c.y - this->startPoint.y;

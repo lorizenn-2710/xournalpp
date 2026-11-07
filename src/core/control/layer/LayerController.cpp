@@ -142,10 +142,11 @@ void LayerController::fireLayerVisibilityChanged() {
     for (LayerCtrlListener* l: this->listener) { l->layerVisibilityChanged(); }
 
     // Rerenders the page - Todo: make this another listener
-    control->getWindow()->getXournal()->layerChanged(selectedPage);
+    control->getEditingView()->layerChanged(control->getEditingView()->getCurrentPage());
 }
 
 void LayerController::fireSelectedLayerChanged() {
+    control->editingTargetChanged();
     for (LayerCtrlListener* l: this->listener) {
         l->updateSelectedLayer();
     }
@@ -351,7 +352,7 @@ void LayerController::copyCurrentLayer() {
     fireRebuildLayerMenu();
 }
 
-auto LayerController::getCurrentPage() const -> PageRef { return control->getDocument()->getPage(selectedPage); }
+auto LayerController::getCurrentPage() const -> PageRef { return control->getEditingPage(); }
 
 auto LayerController::getCurrentPageId() const -> size_t { return selectedPage; }
 

@@ -356,6 +356,10 @@ static void gtk_xournal_dispose(GObject* object) {
     g_return_if_fail(GTK_IS_XOURNAL(object));
     GtkXournal* xournal = GTK_XOURNAL(object);
 
+    // A floating editor may be evicted while its scrolled container still lives.
+    // The adjustments must not retain callbacks into its deleted Layout.
+    g_signal_handlers_disconnect_by_data(xournal->vadjustment, xournal->layout);
+    g_signal_handlers_disconnect_by_data(xournal->hadjustment, xournal->layout);
     g_object_unref(xournal->vadjustment);
     xournal->vadjustment = nullptr;
     g_object_unref(xournal->hadjustment);

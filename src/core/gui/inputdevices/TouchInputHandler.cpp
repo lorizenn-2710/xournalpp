@@ -143,6 +143,8 @@ void TouchInputHandler::zoomStart() {
     // hasn't changed enough).
     this->canBlockZoom = true;
 
+    auto* view = inputContext->getView();
+    if (view->isFloating()) {floatingStartZoom=view->getZoom(); return;}
     ZoomControl* zoomControl = this->inputContext->getView()->getControl()->getZoomControl();
 
     // Disable zoom fit as we are zooming currently
@@ -183,6 +185,7 @@ void TouchInputHandler::zoomMotion(InputEvent const& event) {
         this->canBlockZoom = false;
     }
 
+    if (inputContext->getView()->isFloating()) {inputContext->getView()->setFloatingZoom(floatingStartZoom*zoom);return;}
     ZoomControl* zoomControl = this->inputContext->getView()->getControl()->getZoomControl();
     const auto center = (this->priLastAbs + this->secLastAbs) / 2;
     zoomControl->zoomSequenceChange(zoom, true, center - lastZoomScrollCenter);
@@ -191,6 +194,7 @@ void TouchInputHandler::zoomMotion(InputEvent const& event) {
 
 void TouchInputHandler::zoomEnd() {
     this->zooming = false;
+    if (inputContext->getView()->isFloating()) return;
     ZoomControl* zoomControl = this->inputContext->getView()->getControl()->getZoomControl();
     zoomControl->endZoomSequence();
 }

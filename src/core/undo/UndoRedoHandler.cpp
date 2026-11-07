@@ -10,6 +10,7 @@
 #include <glib.h>  // for g_message
 
 #include "control/Control.h"  // for Control
+#include "model/XojPage.h"
 #include "model/Document.h"   // for Document
 #include "undo/UndoAction.h"  // for UndoActionPtr, UndoAction
 #include "util/Assert.h"      // for xoj_assert
@@ -53,6 +54,7 @@ constexpr bool UNDO_TRACE_BOOL = false;
 #endif
 
 void UndoRedoHandler::printContents() {
+    std::lock_guard historyLock(historyMutex);
     if constexpr (UNDO_TRACE_BOOL)  // NOLINT
     {
         g_message("redoList");             // NOLINT
@@ -67,19 +69,22 @@ void UndoRedoHandler::printContents() {
     }
 }
 
-UndoRedoHandler::UndoRedoHandler(Control* control): control(control) {}
+UndoRedoHandler::UndoRedoHandler(Control* control): control(control) {
+    std::lock_guard historyLock(historyMutex);}
 
 UndoRedoHandler::~UndoRedoHandler() { clearContents(); }
 
 void UndoRedoHandler::clearContents() {
+    std::lock_guard historyLock(historyMutex);
 #ifdef UNDO_TRACE
     for (auto const& undoAction: this->undoList) {
         g_message("clearContents()::Delete UndoAction: %p / %s", undoAction.get(), undoAction->getClassName().c_str());
     }
 #endif  // UNDO_TRACE
 
+    savedState.clear(); autosavedState.clear(); savedPageState.clear();
     undoList.clear();
-    clearRedo();
+    redoList.clear();
 
     this->savedUndo = nullptr;
     this->autosavedUndo = nullptr;
@@ -88,25 +93,24 @@ void UndoRedoHandler::clearContents() {
 }
 
 void UndoRedoHandler::clearRedo() {
+    std::lock_guard historyLock(historyMutex);
 #ifdef UNDO_TRACE
     for (auto const& undoAction: this->redoList) {
         g_message("clearRedo()::Delete UndoAction: %p / %s", undoAction.get(), undoAction->getClassName().c_str());
     }
 #endif
-    redoList.clear();
+    std::erase_if(redoList, [this](const auto& a) { return matches(a); });
     printContents();
 }
 
 void UndoRedoHandler::undo() {
-    if (this->undoList.empty()) {
-        return;
-    }
-
-    xoj_assert(this->undoList.back());
-
-    auto& undoAction = *this->undoList.back();
-    this->redoList.emplace_back(std::move(this->undoList.back()));
-    this->undoList.pop_back();
+    std::lock_guard historyLock(historyMutex);
+    auto it = std::find_if(undoList.rbegin(), undoList.rend(), [this](auto& a) { return matches(a); });
+    if (it == undoList.rend()) return;
+    auto action = std::move(*it);
+    undoList.erase(std::next(it).base());
+    redoList.push_back(std::move(action));
+    auto& undoAction = *redoList.back();
 
     bool undoResult = undoAction.undo(this->control);
 
@@ -123,16 +127,13 @@ void UndoRedoHandler::undo() {
 }
 
 void UndoRedoHandler::redo() {
-    if (this->redoList.empty()) {
-        return;
-    }
-
-    xoj_assert(this->redoList.back());
-
-    UndoAction& redoAction = *this->redoList.back();
-
-    this->undoList.emplace_back(std::move(this->redoList.back()));
-    this->redoList.pop_back();
+    std::lock_guard historyLock(historyMutex);
+    auto it = std::find_if(redoList.rbegin(), redoList.rend(), [this](auto& a) { return matches(a); });
+    if (it == redoList.rend()) return;
+    auto action = std::move(*it);
+    redoList.erase(std::next(it).base());
+    undoList.push_back(std::move(action));
+    auto& redoAction = *undoList.back();
 
     bool redoResult = redoAction.redo(this->control);
 
@@ -148,18 +149,22 @@ void UndoRedoHandler::redo() {
     printContents();
 }
 
-auto UndoRedoHandler::canUndo() -> bool { return !this->undoList.empty(); }
+auto UndoRedoHandler::canUndo() -> bool {
+    std::lock_guard historyLock(historyMutex); return std::any_of(undoList.begin(), undoList.end(), [this](auto& a) { return matches(a); }); }
 
-auto UndoRedoHandler::canRedo() -> bool { return !this->redoList.empty(); }
+auto UndoRedoHandler::canRedo() -> bool {
+    std::lock_guard historyLock(historyMutex); return std::any_of(redoList.begin(), redoList.end(), [this](auto& a) { return matches(a); }); }
 
 /**
  * Adds an undo Action to the list, or if nullptr does nothing
  */
 void UndoRedoHandler::addUndoAction(UndoActionPtr action) {
+    std::lock_guard historyLock(historyMutex);
     if (!action) {
         return;
     }
 
+    action->serial = ++nextSerial;
     this->undoList.emplace_back(std::move(action));
     clearRedo();
     fireUpdateUndoRedoButtons(this->undoList.back()->getPages());
@@ -168,8 +173,9 @@ void UndoRedoHandler::addUndoAction(UndoActionPtr action) {
 }
 
 auto UndoRedoHandler::undoDescription() -> string {
-    if (!this->undoList.empty()) {
-        UndoAction& a = *this->undoList.back();
+    std::lock_guard historyLock(historyMutex);
+    if (auto it = std::find_if(undoList.rbegin(), undoList.rend(), [this](auto& a) { return matches(a); }); it != undoList.rend()) {
+        UndoAction& a = **it;
         if (!a.getText().empty()) {
             string txt = _("Undo: ");
             txt += a.getText();
@@ -180,8 +186,9 @@ auto UndoRedoHandler::undoDescription() -> string {
 }
 
 auto UndoRedoHandler::redoDescription() -> string {
-    if (!this->redoList.empty()) {
-        UndoAction& a = *this->redoList.back();
+    std::lock_guard historyLock(historyMutex);
+    if (auto it = std::find_if(redoList.rbegin(), redoList.rend(), [this](auto& a) { return matches(a); }); it != redoList.rend()) {
+        UndoAction& a = **it;
         if (!a.getText().empty()) {
             string txt = _("Redo: ");
             txt += a.getText();
@@ -192,6 +199,7 @@ auto UndoRedoHandler::redoDescription() -> string {
 }
 
 void UndoRedoHandler::fireUpdateUndoRedoButtons(const std::vector<PageRef>& pages) {
+    std::lock_guard historyLock(historyMutex);
     for (auto&& undoRedoListener: this->listener) { undoRedoListener->undoRedoChanged(); }
 
     for (PageRef page: pages) {
@@ -203,27 +211,55 @@ void UndoRedoHandler::fireUpdateUndoRedoButtons(const std::vector<PageRef>& page
     }
 }
 
-void UndoRedoHandler::addUndoRedoListener(UndoRedoListener* listener) { this->listener.emplace_back(listener); }
+void UndoRedoHandler::addUndoRedoListener(UndoRedoListener* listener) {
+    std::lock_guard historyLock(historyMutex); this->listener.emplace_back(listener); }
 
+bool UndoRedoHandler::matches(const UndoActionPtr& a) const {
+    std::lock_guard historyLock(historyMutex);
+    if (!control) return true;
+    const auto target = control->getEditingPage();
+    const bool note = target && target->floatingNote;
+    const auto pages = a->getPages();
+    // Notebook lifecycle actions remain reachable after the sheet was hidden/deleted.
+    if (a->getClassName() == "FloatingNoteUndoAction" && !note) return true;
+    if (note) return std::find(pages.begin(), pages.end(), target) != pages.end();
+    return std::none_of(pages.begin(), pages.end(), [](auto& p) { return p && p->floatingNote; });
+}
+std::vector<size_t> UndoRedoHandler::state() const {
+    std::lock_guard historyLock(historyMutex);
+    std::vector<size_t> s;
+    for (auto& a : undoList) s.push_back(a->serial);
+    std::sort(s.begin(), s.end());
+    return s;
+}
 auto UndoRedoHandler::isChanged() -> bool {
-    if (this->undoList.empty()) {
-        return this->savedUndo;
-    }
-
-    return this->savedUndo != this->undoList.back().get();
-}
-
+    std::lock_guard historyLock(historyMutex); return state() != savedState; }
 auto UndoRedoHandler::isChangedAutosave() -> bool {
-    if (this->undoList.empty()) {
-        return this->autosavedUndo;
-    }
-    return this->autosavedUndo != this->undoList.back().get();
-}
-
+    std::lock_guard historyLock(historyMutex); return state() != autosavedState; }
 void UndoRedoHandler::documentAutosaved() {
-    this->autosavedUndo = this->undoList.empty() ? nullptr : this->undoList.back().get();
+    std::lock_guard historyLock(historyMutex); autosavedState = state(); }
+void UndoRedoHandler::documentSaved() {
+    std::lock_guard historyLock(historyMutex); savedState = state();
+    savedPageState.clear();
+    for(auto& action:undoList)for(auto& p:action->getPages()) if(p && !savedPageState.count(p)) savedPageState[p]=pageState(p);
 }
 
-void UndoRedoHandler::documentSaved() {
-    this->savedUndo = this->undoList.empty() ? nullptr : this->undoList.back().get();
+std::vector<size_t> UndoRedoHandler::snapshotState() const { return state(); }
+void UndoRedoHandler::documentAutosaved(std::vector<size_t> snapshot) {
+    std::lock_guard lock(historyMutex); autosavedState = std::move(snapshot);
+}
+
+std::vector<size_t> UndoRedoHandler::pageState(const PageRef& page) const {
+    std::lock_guard lock(historyMutex);
+    std::vector<size_t> result;
+    for(auto& action:undoList) {
+        auto pages=action->getPages();
+        if(std::find(pages.begin(),pages.end(),page)!=pages.end())result.push_back(action->serial);
+    }
+    std::sort(result.begin(),result.end());return result;
+}
+bool UndoRedoHandler::isPageChanged(const PageRef& page) const {
+    std::lock_guard lock(historyMutex);
+    auto it=savedPageState.find(page);
+    return pageState(page)!=(it==savedPageState.end()?std::vector<size_t>{}:it->second);
 }

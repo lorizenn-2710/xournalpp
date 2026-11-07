@@ -38,6 +38,7 @@ class ToolbarModel;
 class XournalView;
 class PdfFloatingToolbox;
 class FloatingToolbox;
+class FloatingNotes;
 class GladeSearchpath;
 
 class Menubar;
@@ -82,6 +83,7 @@ public:
     bool isDarkTheme() const;
 
     XournalView* getXournal() const;
+    FloatingNotes* getFloatingNotes() const { return floatingNotes.get(); }
 
     void setMenubarVisible(bool visible);
     void setSidebarVisible(bool visible);
@@ -159,6 +161,8 @@ private:
     Control* control;
 
     std::unique_ptr<XournalView> xournal;
+    std::unique_ptr<FloatingNotes> floatingNotes;
+    GtkWidget* notesOverlay = nullptr;
     GtkWidget* winXournal = nullptr;
     std::unique_ptr<ScrollHandling> scrollHandling;
 

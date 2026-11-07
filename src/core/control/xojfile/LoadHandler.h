@@ -89,6 +89,8 @@ private:
     void finalizeDocument() override;
     void addPage(double width, double height) override;
     void finalizePage() override;
+    void setPageIdentity(std::string id) override;
+    void setFloatingNote(const struct FloatingNoteState& state) override;
     void addAudioAttachment(const fs::path& filename) override;
     void setBgName(const std::string& name) override;
     void setBgSolid(const PageType& bg, Color color) override;

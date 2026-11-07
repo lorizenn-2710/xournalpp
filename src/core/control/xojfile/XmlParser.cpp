@@ -18,6 +18,8 @@
 #include "control/xojfile/XmlAttrs.h"                  // for XmlAttrs
 #include "control/xojfile/XmlParserHelper.h"           // for getAttrib...
 #include "control/xojfile/XmlTags.h"                   // for XmlTags
+#include "model/XojPage.h"
+#include <cmath>
 #include "model/PageType.h"                            // for PageType
 #include "model/Point.h"                               // for Point
 #include "model/Stroke.h"                              // for StrokeTool, StrokeCapStyle
@@ -241,6 +243,29 @@ void XmlParser::parsePageTag(const XmlParserHelper::AttributeMap& attributeMap) 
     const auto height = XmlParserHelper::getAttribMandatory<double>(xoj::xml_attrs::HEIGHT_STR, attributeMap);
 
     this->builder.addPage(width, height);
+    auto str = [&](const char8_t* key) {
+        return std::string(XmlParserHelper::getAttrib<std::string_view>(key, attributeMap).value_or(""));
+    };
+    builder.setPageIdentity(str(u8"stable-id"));
+    if (auto version = XmlParserHelper::getAttrib<int>(u8"scratch-version", attributeMap)) {
+        if (*version != 1) throw std::runtime_error("Unsupported floating notebook version; file not opened to avoid data loss");
+        FloatingNoteState n;
+        auto number = [&](const char8_t* key, double fallback, double lo, double hi) {
+            auto v = XmlParserHelper::getAttrib<double>(key, attributeMap).value_or(fallback);
+            return std::isfinite(v) ? std::clamp(v, lo, hi) : fallback;
+        };
+        n.name = str(u8"scratch-name"); n.sourceId = str(u8"scratch-source");
+        n.x = number(u8"scratch-x", 24, 0, 100000); n.y = number(u8"scratch-y", 24, 0, 100000);
+        n.width = number(u8"scratch-width", 440, 260, 4096); n.height = number(u8"scratch-height", 430, 240, 4096);
+        n.zoom = number(u8"scratch-zoom", .75, .3, 3);
+        n.scrollX = number(u8"scratch-scroll-x", 0, 0, 1000000); n.scrollY = number(u8"scratch-scroll-y", 0, 0, 1000000);
+        n.open = number(u8"scratch-open", 0, 0, 1) != 0;
+        n.pinned = number(u8"scratch-pinned", 0, 0, 1) != 0;
+        n.deleted = number(u8"scratch-deleted", 0, 0, 1) != 0;
+        n.zOrder = number(u8"scratch-z", 0, 0, 1e16);
+        n.created = number(u8"scratch-created", 0, 0, 1e16); n.modified = number(u8"scratch-modified", 0, 0, 1e16);
+        builder.setFloatingNote(n);
+    }
 }
 
 void XmlParser::parseAudioTag(const XmlParserHelper::AttributeMap& attributeMap) {

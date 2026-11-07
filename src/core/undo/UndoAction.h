@@ -25,6 +25,7 @@ public:
     virtual ~UndoAction() = default;
 
 public:
+    size_t serial = 0;
     virtual bool undo(Control* control) = 0;
     virtual bool redo(Control* control) = 0;
 

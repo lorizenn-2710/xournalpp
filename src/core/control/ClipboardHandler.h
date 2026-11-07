@@ -11,6 +11,8 @@
 
 #pragma once
 
+#include <functional>
+#include <memory>
 #include <limits>  // for numeric_limits
 #include <string>  // for string
 
@@ -40,7 +42,7 @@ public:
     virtual ~ClipboardHandler();
 
 public:
-    bool paste();
+    bool paste(std::function<bool()> targetValid = {});
     bool cut();
     bool copy();
 
@@ -49,16 +51,18 @@ public:
     void setCopyCutEnabled(bool enabled);
 
 private:
+    struct Request;
+    std::shared_ptr<bool> alive = std::make_shared<bool>(true);
     static void ownerChangedCallback(GtkClipboard* clip, GdkEvent* event, ClipboardHandler* handler);
     void clipboardUpdated(GdkAtom atom);
     static void receivedClipboardContents(GtkClipboard* clipboard, GtkSelectionData* selectionData,
-                                          ClipboardHandler* handler);
+                                          Request* request);
 
     static void pasteClipboardContents(GtkClipboard* clipboard, GtkSelectionData* selectionData,
-                                       ClipboardHandler* handler);
-    static void pasteClipboardImage(GtkClipboard* clipboard, GdkPixbuf* pixbuf, ClipboardHandler* handler);
+                                       Request* request);
+    static void pasteClipboardImage(GtkClipboard* clipboard, GdkPixbuf* pixbuf, Request* request);
 
-    static void pasteClipboardText(GtkClipboard* clipboard, const gchar* text, ClipboardHandler* handler);
+    static void pasteClipboardText(GtkClipboard* clipboard, const gchar* text, Request* request);
 
 private:
     ClipboardListener* listener = nullptr;

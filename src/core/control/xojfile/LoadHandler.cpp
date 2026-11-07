@@ -93,7 +93,56 @@ void LoadHandler::addDocument(std::u8string creator, int fileVersion) {
 void LoadHandler::finalizeDocument() {
     xoj_assert(this->doc);
 
-    this->doc->addPages(this->pages.begin(), this->pages.end());
+    // Normalize any pages that were previously saved with oversized PDF dimensions (e.g. 3200x4141)
+    for (auto& p: this->pages) {
+        if (!p || p->floatingNote) {
+            continue;
+        }
+        const double oldW = p->getWidth();
+        const double oldH = p->getHeight();
+        double targetW = oldW;
+        double targetH = oldH;
+
+        if (p->getBackgroundType().isPdfPage() && p->getPdfPageNr() < this->doc->getPdfPageCount()) {
+            if (auto pdfPage = this->doc->getPdfPage(p->getPdfPageNr())) {
+                targetW = pdfPage->getWidth();
+                targetH = pdfPage->getHeight();
+            }
+        } else if (std::min(oldW, oldH) > 900.0 && std::max(oldW, oldH) > 0.0) {
+            const double shortSide = std::min(oldW, oldH);
+            const double longSide = std::max(oldW, oldH);
+            const double ratio = shortSide / longSide;
+            double targetShort = 595.27559;
+            double targetLong = targetShort / ratio;
+            if (std::abs(ratio - (612.0 / 792.0)) < 0.025) {
+                targetShort = 612.0;
+                targetLong = 792.0;
+            } else if (std::abs(ratio - (595.27559 / 841.88976)) < 0.025) {
+                targetShort = 595.27559;
+                targetLong = 841.88976;
+            }
+            targetW = (oldW <= oldH) ? targetShort : targetLong;
+            targetH = (oldW <= oldH) ? targetLong : targetShort;
+        }
+
+        if (oldW > 0.0 && oldH > 0.0 && (std::abs(oldW - targetW) > 5.0 || std::abs(oldH - targetH) > 5.0)) {
+            const double sx = targetW / oldW;
+            const double sy = targetH / oldH;
+            p->setSize(targetW, targetH);
+            for (Layer* l: p->getLayers()) {
+                for (const ElementPtr& e: l->getElements()) {
+                    if (e) {
+                        e->scale(0.0, 0.0, sx, sy, 0.0, false);
+                    }
+                }
+            }
+        }
+    }
+
+    for (const auto& p : this->pages) {
+        if (p->floatingNote) this->doc->floatingNotes.push_back(p);
+        else this->doc->addPage(p);
+    }
     this->pages.clear();
     this->parsingComplete = true;
 }
@@ -104,6 +153,11 @@ void LoadHandler::addPage(double width, double height) {
     this->page = std::make_shared<XojPage>(width, height, /*suppressLayerCreation*/ true);
     this->pages.emplace_back(this->page);
 }
+
+void LoadHandler::setPageIdentity(std::string id) {
+    if (!id.empty() && id.size() <= 128) this->page->stableId = std::move(id);
+}
+void LoadHandler::setFloatingNote(const FloatingNoteState& state) { this->page->floatingNote = state; }
 
 void LoadHandler::finalizePage() {
     xoj_assert(this->page);

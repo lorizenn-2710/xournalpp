@@ -30,6 +30,13 @@ inline auto operator>(GtkRecentInfo const& a, GtkRecentInfo const& b) -> bool {
 
 namespace {
 
+bool isRecoveryFile(const fs::path& path) {
+    const auto name = path.filename().u8string();
+    return name == u8"session.xopp" || name == u8"emergencysave.xopp" ||
+           (path.parent_path() == Util::getConfigFolder() && name.ends_with(u8".xopp") &&
+            (name.starts_with(u8"session-") || name.starts_with(u8"emergencysave-")));
+}
+
 enum AcceptedFileType { UNSUPPORTED_FILE_TYPE, XOURNAL_FILE_TYPE, PDF_FILE_TYPE };
 auto getFileType(GtkRecentInfo& info) -> AcceptedFileType {
     const gchar* uri = gtk_recent_info_get_uri(&info);
@@ -38,6 +45,9 @@ auto getFileType(GtkRecentInfo& info) -> AcceptedFileType {
     }
     auto p = Util::fromUri(uri);
     if (!p) {  // Skip remote files
+        return UNSUPPORTED_FILE_TYPE;
+    }
+    if (isRecoveryFile(*p)) {
         return UNSUPPORTED_FILE_TYPE;
     }
     if (Util::hasXournalFileExt(*p)) {
@@ -65,6 +75,7 @@ void RecentManager::clearRecentFiles() {
 }
 
 void RecentManager::addRecentFileFilename(const fs::path& filepath) {
+    if (isRecoveryFile(filepath)) return;
     GtkRecentManager* recentManager = gtk_recent_manager_get_default();
 
     std::string group_name = GROUP;

@@ -18,6 +18,7 @@
 
 #include "control/ToolEnums.h"  // for ToolType
 #include "model/OverlayBase.h"
+#include "model/PageRef.h"
 #include "pdf/base/XojPdfPage.h"  // for XojPdfPageSelectionStyle, XojPdfRec...
 #include "util/DispatchPool.h"
 #include "util/Util.h"                // for npos
@@ -64,7 +65,10 @@ public:
     /// Returns true iff the final selections bounds are known.
     bool isFinalized() const;
 
+    Range getBoundsRange() const;
+
     size_t getSelectionPageNr() const;
+    const PageRef& getDocumentPage() const { return selectionDocumentPage; }
     void setToolType(ToolType toolType);
 
     const cairo_region_t* getSelectedRegion() const { return selectedTextRegion.get(); }
@@ -97,6 +101,7 @@ private:
     ToolType toolType;
 
     size_t selectionPageNr = npos;
+    PageRef selectionDocumentPage;
 
     /// The selection bounds. Note that this does not necessarily correspond to
     /// a rectangle--it may also indicate start and end positions of a linear

@@ -77,11 +77,10 @@ auto StrokeHandler::getSnapAnchor() const -> std::optional<Point> {
 }
 
 void StrokeHandler::paintTo(Point point) {
-    // Magnet snapping: while drawing freehand, a stroke that comes close to the end point or a
-    // vertex of an existing element is pulled onto it, so two strokes meet exactly instead of
-    // leaving a gap. The snapping is applied on a copy used for the position only: the pressure
-    // (z) of the incoming point is kept.
-    {
+    // Magnet snapping in StrokeHandler is restricted to Shape Recognizer mode so normal freehand
+    // handwriting, formulas, right-angle symbols, and vertex labels next to figures are never
+    // magnetically pulled into existing vertices or characters.
+    if (this->control->getToolHandler()->getDrawingType() == DRAWING_TYPE_SHAPE_RECOGNIZER) {
         const Point snapped =
                 this->snappingHandler.snapToElements(Point(point.x, point.y), this->altState);
         point.x = snapped.x;
@@ -189,7 +188,7 @@ void StrokeHandler::onButtonReleaseEvent(const PositionInputData& pos, double zo
     undo->addUndoAction(std::make_unique<InsertUndoAction>(page, layer, stroke.get()));
 
     Settings* settings = control->getSettings();
-    if (settings->getEmptyLastPageAppend() == EmptyLastPageAppendType::OnDrawOfLastPage) {
+    if (!page->floatingNote && settings->getEmptyLastPageAppend() == EmptyLastPageAppendType::OnDrawOfLastPage) {
         auto* doc = control->getDocument();
         doc->lock_shared();
         auto pdfPageCount = doc->getPdfPageCount();
@@ -281,6 +280,9 @@ void StrokeHandler::onButtonPressEvent(const PositionInputData& pos, double zoom
     this->altState = pos.isAltDown();
     // A new stroke starts: the anchor held by the previous one must not leak into this one
     this->snappingHandler.resetElementSnapper();
+    if (this->control->getToolHandler()->getDrawingType() == DRAWING_TYPE_SHAPE_RECOGNIZER) {
+        this->buttonDownPoint = this->snappingHandler.snapToElements(this->buttonDownPoint, this->altState, false);
+    }
 
     stroke = createStroke(this->control);
 

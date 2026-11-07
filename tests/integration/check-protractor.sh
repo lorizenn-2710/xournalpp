@@ -21,7 +21,7 @@ done
 export XDG_RUNTIME_DIR=$D/run
 export XDG_CONFIG_HOME=$D/cfg
 export XDG_DATA_HOME=$D/data
-APP=${APP:-/home/phuc/xpp-src/build/xournalpp-wrapper}
+APP=${APP:-/home/phuc/.local/bin/xournalpp}
 : >"$D/act.err"; : >"$D/shot.err"
 Xvfb :77 -screen 0 1500x1100x24 >"$D/xvfb.log" 2>&1 &
 XVFB=$!
@@ -34,6 +34,8 @@ set -u
 D=/tmp/xpp-pr
 WINOBJ=/com/github/xournalpp/xournalpp/window/1
 "$APP" >"$D/app.log" 2>&1 &
+APPPID=$!
+trap 'kill "$APPPID" 2>/dev/null || true' EXIT
 sleep 1
 
 # Tên bus: GApplication của Xournal++ không đăng ký well-known name, chỉ có
@@ -53,7 +55,7 @@ for i in $(seq 1 160); do
     sleep 0.25
 done
 echo "BUS=${N:-NONE}"
-[ -n "$N" ] || { echo "FAIL: không tìm được object window có action protractor"; pkill -f xournalpp; exit 1; }
+[ -n "$N" ] || { echo "FAIL: không tìm được object window có action protractor"; kill "$APPPID"; exit 1; }
 
 act() {
     gdbus call --session --dest "$N" --object-path "$WINOBJ" \
@@ -64,6 +66,7 @@ state() {  # trạng thái bật/tắt của action, theo DescribeAll
         --method org.gtk.Actions.Describe "$1" 2>/dev/null | tr ',' '\n' | sed -n '1p'
 }
 
+sleep 0.5
 import -window root "$D/00-initial.png" 2>>"$D/shot.err"
 sleep 0.4
 act protractor; echo "ACT_ON_RC=$?"; sleep 1.2
@@ -71,7 +74,7 @@ import -window root "$D/01-on.png" 2>>"$D/shot.err"
 sleep 0.3
 act protractor; echo "ACT_OFF_RC=$?"; sleep 1.0
 import -window root "$D/02-off.png" 2>>"$D/shot.err"
-pkill -f xournalpp 2>/dev/null
+kill "$APPPID" 2>/dev/null
 EOF
 
 python3 - "$D" <<'PY'

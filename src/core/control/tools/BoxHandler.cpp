@@ -4,7 +4,6 @@
 #include <cmath>      // for abs
 
 #include "control/Control.h"                       // for Control
-#include "control/settings/Settings.h"             // for Settings
 #include "control/tools/BaseShapeHandler.h"        // for BaseShapeHandler
 #include "control/tools/SnapToGridInputHandler.h"  // for SnapToGridInputHandler
 #include "model/Point.h"                           // for Point
@@ -18,18 +17,13 @@ BoxHandler::~BoxHandler() = default;
 
 auto BoxHandler::createShape(bool isAltDown, bool isShiftDown, bool isControlDown)
         -> std::pair<std::vector<Point>, Range> {
-    Point c = snappingHandler.snapWithElements(this->currPoint, this->startPoint, isAltDown);
+    Point c = snappingHandler.snapToGridWithElements(this->currPoint, isAltDown, true, this->startPoint);
 
     double width = c.x - this->startPoint.x;
     double height = c.y - this->startPoint.y;
 
-    this->modShift = isShiftDown;
-    this->modControl = isControlDown;
-
-    Settings* settings = control->getSettings();
-    if (settings->getDrawDirModsEnabled()) {
-        this->modifyModifiersByDrawDir(width, height, true);
-    }
+    this->modShift = isShiftDown != flipShift;
+    this->modControl = isControlDown != flipControl;
 
     if (this->modShift) {
         // square front face -> cube
@@ -39,25 +33,23 @@ auto BoxHandler::createShape(bool isAltDown, bool isShiftDown, bool isControlDow
         height = (width * signW) * signH;
     }
 
-    // Front face, like the rectangle tool
-    Point f1, f2;
-    if (!this->modControl) {
-        f1 = this->startPoint;
-        f2 = Point(this->startPoint.x + width, this->startPoint.y + height);
+    if (this->modControl) {
+        this->wireframe = SolidGeometry::triangularPrismWireframe(
+                this->startPoint, Point(this->startPoint.x + width, this->startPoint.y + height));
     } else {
-        // Control: draw from the centre
-        f1 = Point(this->startPoint.x - width, this->startPoint.y - height);
-        f2 = Point(this->startPoint.x + width, this->startPoint.y + height);
+        this->wireframe = SolidGeometry::boxWireframe(this->startPoint,
+                                                      Point(this->startPoint.x + width, this->startPoint.y + height),
+                                                      DEPTH_FRACTION, DEPTH_DX, DEPTH_DY);
     }
-
-    this->wireframe = SolidGeometry::boxWireframe(f1, f2, DEPTH_FRACTION, DEPTH_DX, DEPTH_DY);
-
-    // The outline comes from the same wireframe the hidden edges are derived from, so the two can
-    // never disagree. It is six polylines, not one sequence: see SolidGeometry::boxOutline.
-    std::vector<Point> shape = SolidGeometry::boxOutline(this->wireframe);
+    std::vector<Point> shape = this->modControl ?
+                                       SolidGeometry::triangularOutline(this->wireframe, this->getDrawHiddenEdges()) :
+                                       SolidGeometry::boxOutline(this->wireframe, this->getDrawHiddenEdges());
 
     Range rg(shape.front().x, shape.front().y);
     for (const Point& p: shape) {
+        rg.addPoint(p.x, p.y);
+    }
+    for (const Point& p: this->wireframe.vertices) {
         rg.addPoint(p.x, p.y);
     }
     return {std::move(shape), rg};

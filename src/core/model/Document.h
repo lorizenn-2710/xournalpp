@@ -14,6 +14,8 @@
 #pragma once
 
 #include <cstddef>        // for size_t
+#include <cstdint>        // for uintmax_t
+#include <optional>
 #include <memory>         // for unique_ptr
 #include <shared_mutex>   // for shared_mutex
 #include <string>         // for string
@@ -48,6 +50,12 @@ public:
                  std::unique_ptr<std::string> data = {});
     void resetPdf();
 
+    // Auxiliary pages never enter main numbering, plugins' all/notePages, print or export.
+    std::vector<PageRef> floatingNotes;
+    std::string recoveryId;
+    std::optional<fs::file_time_type> savedFileTime;
+    std::optional<std::uintmax_t> savedFileSize;
+    bool hasExternalModification() const;
     size_t getPageCount() const;
     size_t getPdfPageCount() const;
     XojPdfPageSPtr getPdfPage(size_t page) const;

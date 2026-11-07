@@ -52,6 +52,7 @@ public:
     }
 
     auto isMultiLayerSelection() -> bool;
+    inline auto getUnclippedBBox() const -> const Range& { return this->bbox; }
     /**
      * Get the selected elements and clears them (std::move)
      */

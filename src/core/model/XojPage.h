@@ -25,12 +25,24 @@
 #include "PageHandler.h"      // for PageHandler
 #include "PageType.h"         // for PageType
 
+// Document-owned vector paper; view geometry never changes element coordinates.
+struct FloatingNoteState {
+    std::string name, sourceId;
+    double x = 24, y = 24, width = 440, height = 430;
+    double zoom = .75, scrollX = 0, scrollY = 0;
+    bool open = true, pinned = false, deleted = false;
+    size_t created = 0, modified = 0, revision = 0, zOrder = 0;
+};
+
 class XojPage: public PageHandler {
 public:
     XojPage(double width, double height, bool suppressLayerCreation = false);
     ~XojPage() override;
     XojPage(const XojPage& page);
     void operator=(const XojPage& p) = delete;
+
+    std::string stableId;
+    std::optional<FloatingNoteState> floatingNote;
 
     // Do not modify layers directly, use LayerController
     // So notification can be sent on change

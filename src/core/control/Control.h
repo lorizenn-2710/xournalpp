@@ -59,6 +59,7 @@ class Document;
 class EditSelection;
 class Element;
 class MainWindow;
+class XournalView;
 class ObjectInputStream;
 class ScrollHandler;
 class SearchBar;
@@ -118,7 +119,7 @@ public:
     void exportAsPdf();
     void exportAs();
     void quit(bool allowCancel = true);
-    void saveSessionOnQuit();
+    bool saveSessionOnQuit(bool fromSignal = false);
 
     /**
      * @brief Asynchronously saves the document and calls callback afterwards with boolean parameter true on success.
@@ -313,6 +314,11 @@ public:
     MainWindow* getWindow() const;
     GtkWindow* getGtkWindow() const;
     ScrollHandler* getScrollHandler() const;
+    XournalView* getEditingView() const;
+    PageRef getEditingPage() const;
+    void activateEditingView(XournalView* view);
+    void editingTargetChanged() { ++editingGeneration; }
+    size_t getEditingGeneration() const { return editingGeneration; }
     PageRef getCurrentPage();
     size_t getCurrentPageNo() const;
     XournalppCursor* getCursor() const;
@@ -404,6 +410,7 @@ protected:
     void saveImpl(bool saveAs, std::function<void(bool)> callback);
 
 private:
+    size_t editingGeneration = 0;
     /**
      * @brief Creates the specified geometric tool if it's not on the current page yet. Deletes it if it already exists.
      * @return true if a geometric tool was created
@@ -551,6 +558,7 @@ private:
     GtkProgressBar* pgState = nullptr;
     size_t maxState = 0;
     bool isBlocking;
+    bool sessionSaved = false;
 
     GladeSearchpath* gladeSearchPath;
 

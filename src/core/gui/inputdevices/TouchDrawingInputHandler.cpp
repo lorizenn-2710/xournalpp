@@ -25,7 +25,7 @@
 #include "InputUtils.h"    // for InputUtils
 
 TouchDrawingInputHandler::TouchDrawingInputHandler(InputContext* inputContext): PenInputHandler(inputContext) {
-    inputContext->getToolHandler()->addToolChangedListener([&](ToolType newToolType) {
+    toolSubscription = inputContext->getToolHandler()->addToolChangedListener([this](ToolType) {
         InputDeviceClass touchscreenClass =
                 DeviceListHelper::getSourceMapping(GDK_SOURCE_TOUCHSCREEN, this->inputContext->getSettings());
 
@@ -36,7 +36,10 @@ TouchDrawingInputHandler::TouchDrawingInputHandler(InputContext* inputContext): 
     });
 }
 
-TouchDrawingInputHandler::~TouchDrawingInputHandler() = default;
+TouchDrawingInputHandler::~TouchDrawingInputHandler() {
+    // Each auxiliary editor owns an InputContext, but shares the document's ToolHandler.
+    inputContext->getToolHandler()->removeToolChangedListener(toolSubscription);
+}
 
 auto TouchDrawingInputHandler::handleImpl(InputEvent const& event) -> bool {
     ToolHandler* toolHandler = this->inputContext->getToolHandler();

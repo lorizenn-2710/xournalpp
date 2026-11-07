@@ -210,30 +210,6 @@ void StylusInputHandler::setPressedState(InputEvent const& event) {
     }
 }
 
-auto StylusInputHandler::changeTool(InputEvent const& event) -> bool {
-    Settings* settings = this->inputContext->getSettings();
-    ToolHandler* toolHandler = this->inputContext->getToolHandler();
-    bool toolChanged = false;
-
-    if (event.deviceClass == INPUT_DEVICE_PEN && this->modifier2)
-        toolChanged = InputUtils::applyButton(toolHandler, settings, Button::BUTTON_STYLUS_ONE);
-    else if (event.deviceClass == INPUT_DEVICE_PEN && this->modifier3)
-        toolChanged = InputUtils::applyButton(toolHandler, settings, Button::BUTTON_STYLUS_TWO);
-    else if (event.deviceClass == INPUT_DEVICE_ERASER)
-        toolChanged = InputUtils::applyButton(toolHandler, settings, Button::BUTTON_ERASER);
-    else
-        toolChanged = toolHandler->pointActiveToolToToolbarTool();
-
-    if (toolChanged) {
-        ToolType toolType = toolHandler->getToolType();
-        if (toolType == TOOL_TEXT)
-            toolHandler->selectTool(toolType);
-        toolHandler->fireToolChanged();
-    }
-
-    return true;
-}
-
 // ---------------------------------------------------------------------------
 // VK640 patch: sticky tool on the pen's barrel button
 // ---------------------------------------------------------------------------
@@ -259,6 +235,32 @@ auto shouldLatchStylusTool(Settings* settings, Button button) -> bool {
     return std::find(VK640_TOOL_CYCLE.begin(), VK640_TOOL_CYCLE.end(), action) != VK640_TOOL_CYCLE.end();
 }
 }  // namespace
+
+auto StylusInputHandler::changeTool(InputEvent const& event) -> bool {
+    Settings* settings = this->inputContext->getSettings();
+    ToolHandler* toolHandler = this->inputContext->getToolHandler();
+    bool toolChanged = false;
+
+    if (event.deviceClass == INPUT_DEVICE_PEN && this->modifier2 &&
+        !shouldLatchStylusTool(settings, Button::BUTTON_STYLUS_ONE))
+        toolChanged = InputUtils::applyButton(toolHandler, settings, Button::BUTTON_STYLUS_ONE);
+    else if (event.deviceClass == INPUT_DEVICE_PEN && this->modifier3 &&
+             !shouldLatchStylusTool(settings, Button::BUTTON_STYLUS_TWO))
+        toolChanged = InputUtils::applyButton(toolHandler, settings, Button::BUTTON_STYLUS_TWO);
+    else if (event.deviceClass == INPUT_DEVICE_ERASER)
+        toolChanged = InputUtils::applyButton(toolHandler, settings, Button::BUTTON_ERASER);
+    else
+        toolChanged = toolHandler->pointActiveToolToToolbarTool();
+
+    if (toolChanged) {
+        ToolType toolType = toolHandler->getToolType();
+        if (toolType == TOOL_TEXT)
+            toolHandler->selectTool(toolType);
+        toolHandler->fireToolChanged();
+    }
+
+    return true;
+}
 
 auto StylusInputHandler::vk640BarrelPress(InputEvent const& event) -> bool {
     Button button;
@@ -297,6 +299,9 @@ auto StylusInputHandler::vk640BarrelPress(InputEvent const& event) -> bool {
     }
 
     toolHandler->selectTool(next);
+    if (next == TOOL_PEN && toolHandler->getDrawingType() != DRAWING_TYPE_DEFAULT) {
+        toolHandler->setDrawingType(DRAWING_TYPE_DEFAULT);
+    }
     toolHandler->fireToolChanged();
 
     // One barrel press must land on the NEXT tool of the cycle, so the button config
